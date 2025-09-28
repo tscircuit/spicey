@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { simulate, formatAcResult } from "lib/main"
+import { simulate, formatAcResult } from "lib/index"
 
 const net1 = `
 Demo of a simple AC circuit
