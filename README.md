@@ -1,5 +1,9 @@
 # spicey
 
+Run [SPICE](https://en.wikipedia.org/wiki/SPICE) simulations in native javascript. An alternative to [ngspice](https://ngspice.sourceforge.io/)
+
+[![npm version](https://img.shields.io/npm/v/spicey.svg)](https://www.npmjs.com/package/spicey)
+
 ```tsx
 import { simulate, formatAcResult } from "spicey"
 
