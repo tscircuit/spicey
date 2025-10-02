@@ -31,3 +31,20 @@ formatAcResult(result1.ac)
   ..."
 `)
 ```
+
+## Proposed directory structure
+
+To make it easy to extend the simulator (for example to add transistor models later), the library is now organized into focused modules:
+
+```
+lib/
+  analysis/            # High-level simulation entry points (simulate, simulateAC, simulateTRAN)
+  constants/           # Shared numeric constants
+  formatting/          # Result formatting helpers
+  math/                # Numeric utilities such as Complex arithmetic and matrix solvers
+  parsing/             # Netlist parsing and circuit data structures
+  stamping/            # Matrix/RHS stamping helpers for modified nodal analysis
+  utils/               # Generic helpers (e.g., logarithmic sweeps)
+```
+
+Each exported function lives in its own file with a matching name, so new capabilities can be added without creating monolithic modules.

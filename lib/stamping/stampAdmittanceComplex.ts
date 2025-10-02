@@ -1,0 +1,32 @@
+import type { CircuitNodeIndex } from "../parsing/parseNetlist"
+import { Complex } from "../math/Complex"
+
+function stampAdmittanceComplex(
+  A: Complex[][],
+  nidx: CircuitNodeIndex,
+  n1: number,
+  n2: number,
+  Y: Complex,
+) {
+  const i1 = nidx.matrixIndexOfNode(n1)
+  const i2 = nidx.matrixIndexOfNode(n2)
+  if (i1 >= 0) {
+    const row1 = A[i1]
+    if (!row1) throw new Error("Matrix row missing while stamping")
+    row1[i1] = row1[i1]?.add(Y) ?? Y
+  }
+  if (i2 >= 0) {
+    const row2 = A[i2]
+    if (!row2) throw new Error("Matrix row missing while stamping")
+    row2[i2] = row2[i2]?.add(Y) ?? Y
+  }
+  if (i1 >= 0 && i2 >= 0) {
+    const row1 = A[i1]
+    const row2 = A[i2]
+    if (!row1 || !row2) throw new Error("Matrix row missing while stamping")
+    row1[i2] = row1[i2]?.sub(Y) ?? Complex.from(0, 0).sub(Y)
+    row2[i1] = row2[i1]?.sub(Y) ?? Complex.from(0, 0).sub(Y)
+  }
+}
+
+export { stampAdmittanceComplex }
