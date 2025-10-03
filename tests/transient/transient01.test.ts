@@ -5,9 +5,13 @@ import {
   spiceyTranToVGraphs,
   type EecEngineTranResult,
 } from "lib/index"
-import { plotVGraph } from "../utils/plotVGraph"
 import { Simulation } from "eecircuit-engine"
 import type { ResultType } from "eecircuit-engine"
+import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
+import type {
+  CircuitJsonWithSimulation,
+  SimulationExperimentElement,
+} from "circuit-to-svg"
 
 const rcPulseNetlist = `
 * RC circuit with a pulse source
@@ -52,21 +56,35 @@ test("transient01: rc-pulse", async () => {
     voltages: ngspiceVoltages,
   }
 
+  const simulation_experiment_id = "rc_pulse_experiment"
+
   const vGraphsSpicey = spiceyTranToVGraphs(
     spiceyResult.tran,
     spiceyResult.circuit,
-    "rc_pulse",
+    simulation_experiment_id,
   )
   const vGraphsNgspice = eecEngineTranToVGraphs(
     ngspiceResultForGraphing,
     spiceyResult.circuit,
-    "rc_pulse",
+    simulation_experiment_id,
   )
 
-  const combinedGraphs = [...vGraphsSpicey, ...vGraphsNgspice]
+  const simulationExperiment: SimulationExperimentElement = {
+    type: "simulation_experiment",
+    simulation_experiment_id,
+    name: "RC Circuit Pulse Response",
+    experiment_type: "transient_simulation",
+  }
 
-  const svg = plotVGraph(combinedGraphs, {
-    title: "RC Circuit Pulse Response",
+  const circuitJson: CircuitJsonWithSimulation[] = [
+    simulationExperiment,
+    ...vGraphsSpicey,
+    ...vGraphsNgspice,
+  ]
+
+  const svg = convertCircuitJsonToSimulationGraphSvg({
+    circuitJson,
+    simulation_experiment_id,
   })
 
   expect(svg).toMatchSvgSnapshot(import.meta.path, "rc-pulse-comparison")

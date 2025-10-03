@@ -17,6 +17,7 @@
     "@types/bun": "latest",
     "bun-match-svg": "^0.0.14",
     "circuit-json": "^0.0.267",
+    "circuit-to-svg": "^0.0.217",
     "eecircuit-engine": "^1.5.5",
     "tsup": "^8.5.0"
   },
