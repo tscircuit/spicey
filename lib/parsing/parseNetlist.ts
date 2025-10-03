@@ -130,7 +130,7 @@ function parseNumberWithUnits(raw: unknown) {
 }
 
 function smartTokens(line: string) {
-  const re = /"[^"]*"|\([^()]*\)|\S+/g
+  const re = /"[^"]*"|\w+\s*\([^)]*\)|\([^()]*\)|\S+/g
   const out: string[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(line)) !== null) out.push(m[0])
