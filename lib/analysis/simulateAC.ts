@@ -5,6 +5,7 @@ import type { ParsedCircuit } from "../parsing/parseNetlist"
 import { logspace } from "../utils/logspace"
 import { stampAdmittanceComplex } from "../stamping/stampAdmittanceComplex"
 import { stampVoltageSourceComplex } from "../stamping/stampVoltageSourceComplex"
+import { stampTransconductanceComplex } from "../stamping/stampTransconductanceComplex"
 
 function simulateAC(ckt: ParsedCircuit) {
   if (!ckt.analyses.ac) return null
@@ -62,6 +63,23 @@ function simulateAC(ckt: ParsedCircuit) {
       stampVoltageSourceComplex(A, b, ckt.nodes, vs, Vph)
     }
 
+    for (const q of ckt.Q) {
+      if (q.gpi > 0)
+        stampAdmittanceComplex(A, ckt.nodes, q.nb, q.ne, Complex.from(q.gpi, 0))
+      if (q.gco > 0)
+        stampAdmittanceComplex(A, ckt.nodes, q.nc, q.ne, Complex.from(q.gco, 0))
+      if (q.gm !== 0)
+        stampTransconductanceComplex(
+          A,
+          ckt.nodes,
+          q.nc,
+          q.ne,
+          q.nb,
+          q.ne,
+          Complex.from(q.gm, 0),
+        )
+    }
+
     const x = solveComplex(A, b)
 
     for (let id = 1; id < ckt.nodes.count(); id++) {
@@ -105,6 +123,21 @@ function simulateAC(ckt: ParsedCircuit) {
     for (const vs of ckt.V) {
       const i = x[vs.index] ?? Complex.from(0, 0)
       ;(elementCurrents[vs.name] ||= []).push(i)
+    }
+
+    for (const q of ckt.Q) {
+      const vb =
+        q.nb === 0 ? Complex.from(0, 0) : (x[q.nb - 1] ?? Complex.from(0, 0))
+      const vc =
+        q.nc === 0 ? Complex.from(0, 0) : (x[q.nc - 1] ?? Complex.from(0, 0))
+      const ve =
+        q.ne === 0 ? Complex.from(0, 0) : (x[q.ne - 1] ?? Complex.from(0, 0))
+      const vbe = vb.sub(ve)
+      const vce = vc.sub(ve)
+      const ic = Complex.from(q.gm, 0)
+        .mul(vbe)
+        .add(Complex.from(q.gco, 0).mul(vce))
+      ;(elementCurrents[q.name] ||= []).push(ic)
     }
   }
 
