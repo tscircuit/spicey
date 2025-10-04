@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { simulate } from "lib/index"
+import { simulate, formatAcResult, formatTranResult } from "lib/index"
 
 const tranBiasNetlist = `
 * Simple small-signal transistor bias network
@@ -17,6 +17,19 @@ Q1 c b 0 GM=0.01 RPI=20k RO=100k
 test("transistor01: dc bias with small-signal model", () => {
   const result = simulate(tranBiasNetlist)
   if (!result.tran) throw new Error("Transient result missing")
+
+  const { times, nodeVoltages } = result.tran
+  const trimmedTran = {
+    times,
+    nodeVoltages: {
+      b: nodeVoltages["b"] ?? [],
+      c: nodeVoltages["c"] ?? [],
+    },
+  }
+
+  expect(formatTranResult(trimmedTran)).toMatchInlineSnapshot(`
+    "t(s), b:V, c:V\n    0.00000, 0.0166667, 7.57576\n    0.00000100000, 0.0166667, 7.57576"
+  `)
 
   const vb = result.tran.nodeVoltages["b"]?.at(-1)
   const vc = result.tran.nodeVoltages["c"]?.at(-1)
@@ -47,6 +60,18 @@ VCC 1 0 DC 10
 test("transistor01: ac gain matches expected small-signal solution", () => {
   const result = simulate(acAmplifierNetlist)
   if (!result.ac) throw new Error("AC result missing")
+
+  const trimmedAc = {
+    freqs: result.ac.freqs,
+    nodeVoltages: {
+      b: result.ac.nodeVoltages["b"] ?? [],
+      c: result.ac.nodeVoltages["c"] ?? [],
+    },
+  }
+
+  expect(formatAcResult(trimmedAc)).toMatchInlineSnapshot(`
+    "f(Hz), b:|V|,∠V(deg), c:|V|,∠V(deg)\n    1000.00, 0.166667,0.00000, 15.1515,-180.000\n    1000.00, 0.166667,0.00000, 15.1515,-180.000"
+  `)
 
   const vb = result.ac.nodeVoltages["b"]?.[0]
   const vc = result.ac.nodeVoltages["c"]?.[0]
