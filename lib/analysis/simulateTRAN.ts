@@ -4,6 +4,7 @@ import type { ParsedCircuit } from "../parsing/parseNetlist"
 import { stampAdmittanceReal } from "../stamping/stampAdmittanceReal"
 import { stampCurrentReal } from "../stamping/stampCurrentReal"
 import { stampVoltageSourceReal } from "../stamping/stampVoltageSourceReal"
+import { stampTransconductanceReal } from "../stamping/stampTransconductanceReal"
 
 function simulateTRAN(ckt: ParsedCircuit) {
   if (!ckt.analyses.tran) return null
@@ -54,6 +55,13 @@ function simulateTRAN(ckt: ParsedCircuit) {
       stampVoltageSourceReal(A, b, ckt.nodes, vs, Vt)
     }
 
+    for (const q of ckt.Q) {
+      if (q.gpi > 0) stampAdmittanceReal(A, ckt.nodes, q.nb, q.ne, q.gpi)
+      if (q.gco > 0) stampAdmittanceReal(A, ckt.nodes, q.nc, q.ne, q.gco)
+      if (q.gm !== 0)
+        stampTransconductanceReal(A, ckt.nodes, q.nc, q.ne, q.nb, q.ne, q.gm)
+    }
+
     const x = solveReal(A, b)
 
     for (let id = 1; id < ckt.nodes.count(); id++) {
@@ -87,6 +95,16 @@ function simulateTRAN(ckt: ParsedCircuit) {
     for (const vs of ckt.V) {
       const i = x[vs.index] ?? 0
       ;(elementCurrents[vs.name] ||= []).push(i)
+    }
+
+    for (const q of ckt.Q) {
+      const vb = q.nb === 0 ? 0 : (x[q.nb - 1] ?? 0)
+      const vc = q.nc === 0 ? 0 : (x[q.nc - 1] ?? 0)
+      const ve = q.ne === 0 ? 0 : (x[q.ne - 1] ?? 0)
+      const vbe = vb - ve
+      const vce = vc - ve
+      const ic = q.gm * vbe + q.gco * vce
+      ;(elementCurrents[q.name] ||= []).push(ic)
     }
 
     for (const c of ckt.C) {

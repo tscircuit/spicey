@@ -51,12 +51,28 @@ type ParsedTranAnalysis = {
   tstop: number
 } | null
 
+type ParsedTransistor = {
+  name: string
+  nc: number
+  nb: number
+  ne: number
+  gm: number
+  gpi: number
+  gco: number
+  params: {
+    beta: number
+    rpi: number
+    ro: number
+  }
+}
+
 type ParsedCircuit = {
   nodes: CircuitNodeIndex
   R: ParsedResistor[]
   C: ParsedCapacitor[]
   L: ParsedInductor[]
   V: ParsedVoltageSource[]
+  Q: ParsedTransistor[]
   analyses: {
     ac: ParsedACAnalysis
     tran: ParsedTranAnalysis
@@ -190,6 +206,7 @@ function parseNetlist(text: string): ParsedCircuit {
     C: [],
     L: [],
     V: [],
+    Q: [],
     analyses: { ac: null, tran: null },
     skipped: [],
   }
@@ -347,6 +364,102 @@ function parseNetlist(text: string): ParsedCircuit {
           waveform: spec.waveform,
           index: spec.index ?? -1,
         })
+      } else if (typeChar === "q") {
+        const nc = ckt.nodes.getOrCreate(
+          requireToken(tokens, 1, "Transistor missing collector node"),
+        )
+        const nb = ckt.nodes.getOrCreate(
+          requireToken(tokens, 2, "Transistor missing base node"),
+        )
+        const ne = ckt.nodes.getOrCreate(
+          requireToken(tokens, 3, "Transistor missing emitter node"),
+        )
+
+        let gm = Number.NaN
+        let beta = Number.NaN
+        let rpi = Number.NaN
+        let gpi = Number.NaN
+        let ro = Number.NaN
+        let gco = Number.NaN
+
+        for (let i = 4; i < tokens.length; i++) {
+          const rawToken = tokens[i]
+          if (!rawToken) continue
+          const lower = rawToken.toLowerCase()
+          if (!lower.includes("=")) continue
+          const parts = lower.split("=", 2)
+          const keyPart = parts[0]
+          const valuePart = parts[1]
+          if (!keyPart || !valuePart) continue
+          const key = keyPart.trim()
+          const valueToken = valuePart.trim()
+          if (!key || !valueToken) continue
+          const value = parseNumberWithUnits(valueToken)
+          if (Number.isNaN(value)) continue
+          if (key === "gm" || key === "g_m") {
+            gm = value
+          } else if (key === "beta" || key === "bf") {
+            beta = value
+          } else if (key === "rpi" || key === "r_pi") {
+            rpi = value
+          } else if (key === "gpi" || key === "g_pi") {
+            gpi = value
+          } else if (key === "ro" || key === "r_o") {
+            ro = value
+          } else if (key === "gco" || key === "g_o" || key === "go") {
+            gco = value
+          }
+        }
+
+        const betaVal = Number.isNaN(beta) ? 100 : beta
+
+        const rpiVal = (() => {
+          if (!Number.isNaN(rpi) && rpi > 0) return rpi
+          if (!Number.isNaN(gpi) && gpi > 0) return 1 / gpi
+          if (!Number.isNaN(gm) && gm > 0) return betaVal / gm
+          return 10_000
+        })()
+
+        const gmVal = (() => {
+          if (!Number.isNaN(gm)) return gm
+          if (!Number.isNaN(beta) && !Number.isNaN(rpiVal) && rpiVal > 0)
+            return betaVal / rpiVal
+          if (!Number.isNaN(gpi) && gpi > 0) return betaVal * gpi
+          return betaVal / rpiVal
+        })()
+
+        const gpiVal = (() => {
+          if (!Number.isNaN(gpi) && gpi > 0) return gpi
+          if (rpiVal > 0) return 1 / rpiVal
+          return 0
+        })()
+
+        const roVal = (() => {
+          if (!Number.isNaN(ro) && ro > 0) return ro
+          if (!Number.isNaN(gco) && gco > 0) return 1 / gco
+          return Infinity
+        })()
+
+        const gcoVal = (() => {
+          if (!Number.isNaN(gco) && gco > 0) return gco
+          if (roVal === Infinity) return 0
+          return 1 / roVal
+        })()
+
+        ckt.Q.push({
+          name,
+          nc,
+          nb,
+          ne,
+          gm: gmVal,
+          gpi: gpiVal,
+          gco: gcoVal,
+          params: {
+            beta: betaVal,
+            rpi: rpiVal,
+            ro: roVal,
+          },
+        })
       } else {
         ckt.skipped.push(line)
       }
@@ -375,6 +488,7 @@ export type {
   ParsedCapacitor,
   ParsedInductor,
   ParsedVoltageSource,
+  ParsedTransistor,
   CircuitNodeIndex,
 }
 export { parseNetlist }
