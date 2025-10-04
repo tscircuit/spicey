@@ -1,5 +1,10 @@
 import { test, expect } from "bun:test"
-import { simulate } from "lib/index"
+import { simulate, spiceyTranToVGraphs } from "lib/index"
+import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
+import type {
+  CircuitJsonWithSimulation,
+  SimulationExperimentElement,
+} from "circuit-to-svg"
 
 const switchNetlist = `
 * SPST switch between node OUT and ground, turns ON at 1ms, OFF at 3ms, ON at 7ms
@@ -69,4 +74,34 @@ test("transient: voltage-controlled switch with PWL control", () => {
   const finalRecharge = sample(0.0095)
   expect(finalRecharge.ctrl).toBeCloseTo(0, 9)
   expect(finalRecharge.out).toBeGreaterThan(2)
+})
+
+test("transient: vswitch PWL graph snapshot", () => {
+  const { circuit, tran } = simulate(switchNetlist)
+
+  expect(tran).not.toBeNull()
+  if (!tran) return
+
+  const simulation_experiment_id = "vswitch_pwl_spst"
+
+  const simulationExperiment: SimulationExperimentElement = {
+    type: "simulation_experiment",
+    simulation_experiment_id,
+    name: "SPST switch under PWL control",
+    experiment_type: "transient_simulation",
+  }
+
+  const graphs = spiceyTranToVGraphs(tran, circuit, simulation_experiment_id)
+
+  const circuitJson: CircuitJsonWithSimulation[] = [
+    simulationExperiment,
+    ...graphs,
+  ]
+
+  const svg = convertCircuitJsonToSimulationGraphSvg({
+    circuitJson,
+    simulation_experiment_id,
+  })
+
+  expect(svg).toMatchSvgSnapshot(import.meta.path, "vswitch-pwl-control")
 })
