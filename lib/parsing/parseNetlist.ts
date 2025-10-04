@@ -39,6 +39,25 @@ type ParsedVoltageSource = {
   index: number
 }
 
+type ParsedVSwitchModel = {
+  name: string
+  Ron: number
+  Roff: number
+  Von: number
+  Voff: number
+}
+
+type ParsedSwitch = {
+  name: string
+  n1: number
+  n2: number
+  ncPos: number
+  ncNeg: number
+  modelName: string
+  model: ParsedVSwitchModel | null
+  isOn: boolean
+}
+
 type ParsedACAnalysis = {
   mode: "dec" | "lin"
   N: number
@@ -57,11 +76,15 @@ type ParsedCircuit = {
   C: ParsedCapacitor[]
   L: ParsedInductor[]
   V: ParsedVoltageSource[]
+  S: ParsedSwitch[]
   analyses: {
     ac: ParsedACAnalysis
     tran: ParsedTranAnalysis
   }
   skipped: string[]
+  models: {
+    vswitch: Map<string, ParsedVSwitchModel>
+  }
 }
 
 class NodeIndex {
@@ -163,6 +186,38 @@ function parsePulseArgs(token: string): PulseSpec {
   }
 }
 
+function parsePwlArgs(token: string) {
+  const clean = token.trim().replace(/^pwl\s*\(/i, "(")
+  const inside = clean.replace(/^\(/, "").replace(/\)$/, "").trim()
+  const parts = inside.split(/[\s,]+/).filter((x) => x.length)
+  if (parts.length === 0 || parts.length % 2 !== 0)
+    throw new Error("PWL(...) requires an even number of time/value pairs")
+  const pairs: { t: number; v: number }[] = []
+  for (let i = 0; i < parts.length; i += 2) {
+    const t = parseNumberWithUnits(parts[i]!)
+    const v = parseNumberWithUnits(parts[i + 1]!)
+    if (Number.isNaN(t) || Number.isNaN(v))
+      throw new Error("Invalid PWL() numeric value")
+    pairs.push({ t, v })
+  }
+  return pairs
+}
+
+function pwlValue(pairs: { t: number; v: number }[], t: number): number {
+  if (pairs.length === 0) return 0
+  if (t <= pairs[0]!.t) return pairs[0]!.v
+  for (let i = 1; i < pairs.length; i++) {
+    const prev = pairs[i - 1]!
+    const curr = pairs[i]!
+    if (t <= curr.t) {
+      const dt = Math.max(curr.t - prev.t, EPS)
+      const a = (t - prev.t) / dt
+      return prev.v + (curr.v - prev.v) * a
+    }
+  }
+  return pairs[pairs.length - 1]!.v
+}
+
 function pulseValue(p: PulseSpec, t: number) {
   if (t < p.td) return p.v1
   const tt = t - p.td
@@ -184,14 +239,18 @@ function pulseValue(p: PulseSpec, t: number) {
 }
 
 function parseNetlist(text: string): ParsedCircuit {
+  const vswitchModels = new Map<string, ParsedVSwitchModel>()
+
   const ckt: ParsedCircuit = {
     nodes: new NodeIndex(),
     R: [],
     C: [],
     L: [],
     V: [],
+    S: [],
     analyses: { ac: null, tran: null },
     skipped: [],
+    models: { vswitch: vswitchModels },
   }
 
   const lines = text.split(/\r?\n/)
@@ -211,7 +270,7 @@ function parseNetlist(text: string): ParsedCircuit {
     const first = tokens[0]!
     if (first.length === 0) continue
 
-    if (!seenTitle && !/^[rclvgmiqd]\w*$/i.test(first) && !/^\./.test(first)) {
+    if (!seenTitle && !/^[rclvgsmiqd]\w*$/i.test(first) && !/^\./.test(first)) {
       seenTitle = true
       continue
     }
@@ -241,6 +300,51 @@ function parseNetlist(text: string): ParsedCircuit {
           requireToken(tokens, 2, ".tran missing stop time"),
         )
         ckt.analyses.tran = { dt, tstop }
+      } else if (dir === ".model") {
+        const nameToken = requireToken(tokens, 1, ".model missing name")
+        const typeToken = requireToken(tokens, 2, ".model missing type")
+        let type = typeToken
+        let paramsStr = ""
+        if (type.includes("(")) {
+          const idx = type.indexOf("(")
+          paramsStr = type.slice(idx + 1)
+          type = type.slice(0, idx)
+        }
+        if (!paramsStr) {
+          const rest = tokens.slice(3).join(" ")
+          paramsStr = rest.replace(/^\(/, "").replace(/\)$/, "")
+        } else {
+          const rest = tokens.slice(3).join(" ").replace(/\)$/, "")
+          paramsStr = `${paramsStr} ${rest}`.trim()
+        }
+        paramsStr = paramsStr.replace(/^\(/, "").replace(/\)$/, "").trim()
+        const typeLower = type.toLowerCase()
+        if (typeLower === "vswitch") {
+          const model: ParsedVSwitchModel = {
+            name: nameToken,
+            Ron: 1,
+            Roff: 1e12,
+            Von: 0,
+            Voff: 0,
+          }
+          if (paramsStr.length > 0) {
+            const assignments = paramsStr.split(/[\s,]+/).filter(Boolean)
+            for (const assignment of assignments) {
+              const [keyRaw, valueRaw] = assignment.split("=")
+              if (!keyRaw || valueRaw == null) continue
+              const key = keyRaw.toLowerCase()
+              const value = parseNumberWithUnits(valueRaw)
+              if (Number.isNaN(value)) continue
+              if (key === "ron") model.Ron = value
+              else if (key === "roff") model.Roff = value
+              else if (key === "von") model.Von = value
+              else if (key === "voff") model.Voff = value
+            }
+          }
+          vswitchModels.set(nameToken.toLowerCase(), model)
+        } else {
+          ckt.skipped.push(line)
+        }
       } else {
         ckt.skipped.push(line)
       }
@@ -331,6 +435,15 @@ function parseNetlist(text: string): ParsedCircuit {
             const p = parsePulseArgs(argToken)
             spec.waveform = (t: number) => pulseValue(p, t)
             i += key.includes("(") ? 1 : 2
+          } else if (key.startsWith("pwl")) {
+            const argToken = key.includes("(")
+              ? key
+              : requireToken(tokens, i + 1, "PWL() missing arguments")
+            if (!argToken || !/\(.*\)/.test(argToken))
+              throw new Error("Malformed PWL() specification")
+            const pairs = parsePwlArgs(argToken)
+            spec.waveform = (t: number) => pwlValue(pairs, t)
+            i += key.includes("(") ? 1 : 2
           } else if (/^\(.*\)$/.test(key)) {
             i++
           } else {
@@ -346,6 +459,30 @@ function parseNetlist(text: string): ParsedCircuit {
           acPhaseDeg: spec.acPhaseDeg,
           waveform: spec.waveform,
           index: spec.index ?? -1,
+        })
+      } else if (typeChar === "s") {
+        const n1 = ckt.nodes.getOrCreate(
+          requireToken(tokens, 1, "Switch missing node"),
+        )
+        const n2 = ckt.nodes.getOrCreate(
+          requireToken(tokens, 2, "Switch missing node"),
+        )
+        const ncPos = ckt.nodes.getOrCreate(
+          requireToken(tokens, 3, "Switch missing control node"),
+        )
+        const ncNeg = ckt.nodes.getOrCreate(
+          requireToken(tokens, 4, "Switch missing control node"),
+        )
+        const modelName = requireToken(tokens, 5, "Switch missing model")
+        ckt.S.push({
+          name,
+          n1,
+          n2,
+          ncPos,
+          ncNeg,
+          modelName: modelName.toLowerCase(),
+          model: null,
+          isOn: false,
         })
       } else {
         ckt.skipped.push(line)
@@ -364,6 +501,16 @@ function parseNetlist(text: string): ParsedCircuit {
     if (!vs) continue
     vs.index = nNodes + i
   }
+
+  for (const sw of ckt.S) {
+    const model = vswitchModels.get(sw.modelName)
+    if (!model)
+      throw new Error(
+        `Unknown .model ${sw.modelName} referenced by switch ${sw.name}`,
+      )
+    sw.model = model
+    sw.isOn = false
+  }
   return ckt
 }
 
@@ -375,6 +522,8 @@ export type {
   ParsedCapacitor,
   ParsedInductor,
   ParsedVoltageSource,
+  ParsedVSwitchModel,
+  ParsedSwitch,
   CircuitNodeIndex,
 }
 export { parseNetlist }
