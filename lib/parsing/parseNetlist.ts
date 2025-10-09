@@ -28,6 +28,13 @@ type ParsedInductor = {
   L: number
   iPrev: number
 }
+
+type ParsedDiodeModel = {
+  name: string
+  Is: number
+  N: number
+}
+
 type ParsedVoltageSource = {
   name: string
   n1: number
@@ -45,6 +52,15 @@ type ParsedVSwitchModel = {
   Roff: number
   Von: number
   Voff: number
+}
+
+type ParsedDiode = {
+  name: string
+  nPlus: number
+  nMinus: number
+  modelName: string
+  model: ParsedDiodeModel | null
+  vdPrev: number
 }
 
 type ParsedSwitch = {
@@ -77,6 +93,7 @@ type ParsedCircuit = {
   L: ParsedInductor[]
   V: ParsedVoltageSource[]
   S: ParsedSwitch[]
+  D: ParsedDiode[]
   analyses: {
     ac: ParsedACAnalysis
     tran: ParsedTranAnalysis
@@ -84,6 +101,7 @@ type ParsedCircuit = {
   skipped: string[]
   models: {
     vswitch: Map<string, ParsedVSwitchModel>
+    diode: Map<string, ParsedDiodeModel>
   }
 }
 
@@ -240,6 +258,7 @@ function pulseValue(p: PulseSpec, t: number) {
 
 function parseNetlist(text: string): ParsedCircuit {
   const vswitchModels = new Map<string, ParsedVSwitchModel>()
+  const diodeModels = new Map<string, ParsedDiodeModel>()
 
   const ckt: ParsedCircuit = {
     nodes: new NodeIndex(),
@@ -248,9 +267,10 @@ function parseNetlist(text: string): ParsedCircuit {
     L: [],
     V: [],
     S: [],
+    D: [],
     analyses: { ac: null, tran: null },
     skipped: [],
-    models: { vswitch: vswitchModels },
+    models: { vswitch: vswitchModels, diode: diodeModels },
   }
 
   const lines = text.split(/\r?\n/)
@@ -319,7 +339,7 @@ function parseNetlist(text: string): ParsedCircuit {
         }
         paramsStr = paramsStr.replace(/^\(/, "").replace(/\)$/, "").trim()
         const typeLower = type.toLowerCase()
-        if (typeLower === "vswitch") {
+        if (typeLower === "vswitch" || typeLower === "sw") {
           const model: ParsedVSwitchModel = {
             name: nameToken,
             Ron: 1,
@@ -342,6 +362,25 @@ function parseNetlist(text: string): ParsedCircuit {
             }
           }
           vswitchModels.set(nameToken.toLowerCase(), model)
+        } else if (typeLower === "d") {
+          const model: ParsedDiodeModel = {
+            name: nameToken,
+            Is: 1e-14, // default saturation current
+            N: 1, // default ideality factor
+          }
+          if (paramsStr.length > 0) {
+            const assignments = paramsStr.split(/[\s,]+/).filter(Boolean)
+            for (const assignment of assignments) {
+              const [keyRaw, valueRaw] = assignment.split("=")
+              if (!keyRaw || valueRaw == null) continue
+              const key = keyRaw.toLowerCase()
+              const value = parseNumberWithUnits(valueRaw)
+              if (Number.isNaN(value)) continue
+              if (key === "is") model.Is = value
+              else if (key === "n") model.N = value
+            }
+          }
+          diodeModels.set(nameToken.toLowerCase(), model)
         } else {
           ckt.skipped.push(line)
         }
@@ -484,6 +523,26 @@ function parseNetlist(text: string): ParsedCircuit {
           model: null,
           isOn: false,
         })
+      } else if (typeChar === "d") {
+        if (tokens.length === 4) {
+          const nPlus = ckt.nodes.getOrCreate(
+            requireToken(tokens, 1, "Diode missing node"),
+          )
+          const nMinus = ckt.nodes.getOrCreate(
+            requireToken(tokens, 2, "Diode missing node"),
+          )
+          const modelName = requireToken(tokens, 3, "Diode missing model")
+          ckt.D.push({
+            name,
+            nPlus,
+            nMinus,
+            modelName: modelName.toLowerCase(),
+            model: null,
+            vdPrev: 0,
+          })
+        } else {
+          ckt.skipped.push(line)
+        }
       } else {
         ckt.skipped.push(line)
       }
@@ -511,6 +570,15 @@ function parseNetlist(text: string): ParsedCircuit {
     sw.model = model
     sw.isOn = false
   }
+
+  for (const d of ckt.D) {
+    const model = diodeModels.get(d.modelName)
+    if (!model)
+      throw new Error(
+        `Unknown .model ${d.modelName} referenced by diode ${d.name}`,
+      )
+    d.model = model
+  }
   return ckt
 }
 
@@ -521,6 +589,8 @@ export type {
   ParsedResistor,
   ParsedCapacitor,
   ParsedInductor,
+  ParsedDiode,
+  ParsedDiodeModel,
   ParsedVoltageSource,
   ParsedVSwitchModel,
   ParsedSwitch,
