@@ -65,6 +65,39 @@ function simulateTRAN(ckt: ParsedCircuit) {
         stampVoltageSourceReal(A, b, ckt.nodes, vs, Vt)
       }
 
+      // Diode companion model stamping
+      const VT = 0.02585 // Thermal voltage at 300K
+      for (const d of ckt.D) {
+        const model = d.model
+        if (!model) continue
+
+        const { nPlus, nMinus } = d
+
+        const vp_idx = ckt.nodes.matrixIndexOfNode(nPlus)
+        const vn_idx = ckt.nodes.matrixIndexOfNode(nMinus)
+
+        const v_plus_prev_iter = nPlus === 0 ? 0 : (x[vp_idx] ?? 0)
+        const v_minus_prev_iter = nMinus === 0 ? 0 : (x[vn_idx] ?? 0)
+        const vd_prev_iter = v_plus_prev_iter - v_minus_prev_iter
+
+        const vd = iter === 0 ? d.vdPrev : vd_prev_iter
+
+        // Diode equation with Shockley model, using companion model for NR
+        const v_thermal = model.N * VT
+        let vd_limited = vd
+        if (vd > 0.8) vd_limited = 0.8 // prevent overflow
+        if (vd < -1.0) vd_limited = -1.0 // limit reverse voltage
+
+        const exp_val = Math.exp(vd_limited / v_thermal)
+        const id = model.Is * (exp_val - 1)
+        const gd = Math.max((model.Is / v_thermal) * exp_val, 1e-12)
+
+        const ieq = id - gd * vd_limited
+
+        stampAdmittanceReal(A, ckt.nodes, nPlus, nMinus, gd)
+        stampCurrentReal(b, ckt.nodes, nPlus, nMinus, ieq)
+      }
+
       x = solveReal(A, b)
 
       let switched = false
@@ -133,6 +166,21 @@ function simulateTRAN(ckt: ParsedCircuit) {
       ;(elementCurrents[sw.name] ||= []).push(i)
     }
 
+    // Diode current calculation
+    for (const d of ckt.D) {
+      if (!d.model) continue
+      const { nPlus, nMinus, model } = d
+      const v1 = nPlus === 0 ? 0 : (x[nPlus - 1] ?? 0)
+      const v2 = nMinus === 0 ? 0 : (x[nMinus - 1] ?? 0)
+      const vd = v1 - v2
+
+      const VT = 0.02585
+      const v_thermal = model.N * VT
+      const exp_val = Math.exp(vd / v_thermal)
+      const id = model.Is * (exp_val - 1)
+      ;(elementCurrents[d.name] ||= []).push(id)
+    }
+
     for (const c of ckt.C) {
       const v1 = c.n1 === 0 ? 0 : (x[c.n1 - 1] ?? 0)
       const v2 = c.n2 === 0 ? 0 : (x[c.n2 - 1] ?? 0)
@@ -143,6 +191,12 @@ function simulateTRAN(ckt: ParsedCircuit) {
       const v2 = l.n2 === 0 ? 0 : (x[l.n2 - 1] ?? 0)
       const Gl = Math.max(dt, EPS) / l.L
       l.iPrev = Gl * (v1 - v2) + l.iPrev
+    }
+
+    for (const d of ckt.D) {
+      const v1 = d.nPlus === 0 ? 0 : (x[d.nPlus - 1] ?? 0)
+      const v2 = d.nMinus === 0 ? 0 : (x[d.nMinus - 1] ?? 0)
+      d.vdPrev = v1 - v2
     }
   }
 
