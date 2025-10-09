@@ -200,6 +200,16 @@ function simulateTRAN(ckt: ParsedCircuit) {
     }
   }
 
+  if (ckt.probes.tran.length > 0) {
+    const probedVoltages: Record<string, number[]> = {}
+    for (const nodeName of ckt.probes.tran) {
+      if (nodeVoltages[nodeName]) {
+        probedVoltages[nodeName] = nodeVoltages[nodeName]
+      }
+    }
+    return { times, nodeVoltages: probedVoltages, elementCurrents }
+  }
+
   return { times, nodeVoltages, elementCurrents }
 }
 
