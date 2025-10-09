@@ -98,6 +98,9 @@ type ParsedCircuit = {
     ac: ParsedACAnalysis
     tran: ParsedTranAnalysis
   }
+  probes: {
+    tran: string[]
+  }
   skipped: string[]
   models: {
     vswitch: Map<string, ParsedVSwitchModel>
@@ -269,6 +272,7 @@ function parseNetlist(text: string): ParsedCircuit {
     S: [],
     D: [],
     analyses: { ac: null, tran: null },
+    probes: { tran: [] },
     skipped: [],
     models: { vswitch: vswitchModels, diode: diodeModels },
   }
@@ -320,6 +324,26 @@ function parseNetlist(text: string): ParsedCircuit {
           requireToken(tokens, 2, ".tran missing stop time"),
         )
         ckt.analyses.tran = { dt, tstop }
+      } else if (dir === ".print") {
+        const analysisType = requireToken(
+          tokens,
+          1,
+          ".print missing analysis type",
+        ).toLowerCase()
+        if (analysisType === "tran") {
+          const probeTokens = tokens.slice(2)
+          for (const token of probeTokens) {
+            const match = token.match(/^v\(([^)]+)\)$/i)
+            if (match && match[1]) {
+              const nodeName = match[1]
+              if (!ckt.probes.tran.includes(nodeName)) {
+                ckt.probes.tran.push(nodeName)
+              }
+            }
+          }
+        } else {
+          ckt.skipped.push(line)
+        }
       } else if (dir === ".model") {
         const nameToken = requireToken(tokens, 1, ".model missing name")
         const typeToken = requireToken(tokens, 2, ".model missing type")
