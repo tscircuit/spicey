@@ -118,16 +118,17 @@ class NodeIndex {
   }
 
   getOrCreate(name: string) {
-    const key = String(name)
+    const origName = String(name)
+    const key = origName.toUpperCase()
     if (this.map.has(key)) return this.map.get(key) as number
     const idx = this.rev.length
     this.map.set(key, idx)
-    this.rev.push(key)
+    this.rev.push(origName)
     return idx
   }
 
   get(name: string) {
-    return this.map.get(String(name))
+    return this.map.get(String(name).toUpperCase())
   }
 
   count() {
@@ -336,7 +337,11 @@ function parseNetlist(text: string): ParsedCircuit {
             const match = token.match(/^v\(([^)]+)\)$/i)
             if (match && match[1]) {
               const nodeName = match[1]
-              if (!ckt.probes.tran.includes(nodeName)) {
+              if (
+                !ckt.probes.tran.some(
+                  (p) => p.toUpperCase() === nodeName.toUpperCase(),
+                )
+              ) {
                 ckt.probes.tran.push(nodeName)
               }
             }
