@@ -31,7 +31,7 @@ export function spiceyTranToVGraphs(
       time_per_step: dt * 1000,
       start_time_ms: 0,
       end_time_ms: tstop * 1000,
-      name: `${nodeName} (spicey)`,
+      name: `V(${nodeName})`,
     })
   }
 
@@ -59,7 +59,7 @@ export function eecEngineTranToVGraphs(
       time_per_step: dt * 1000,
       start_time_ms: 0,
       end_time_ms: tstop * 1000,
-      name: `${nodeName} (ngspice)`,
+      name: `V(${nodeName}) (ngspice)`,
     })
   }
   return graphs
