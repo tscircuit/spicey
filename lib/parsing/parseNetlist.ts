@@ -376,6 +376,8 @@ function parseNetlist(text: string): ParsedCircuit {
             Von: 0,
             Voff: 0,
           }
+          let vt: number | undefined
+          let vh: number | undefined
           if (paramsStr.length > 0) {
             const assignments = paramsStr.split(/[\s,]+/).filter(Boolean)
             for (const assignment of assignments) {
@@ -388,7 +390,14 @@ function parseNetlist(text: string): ParsedCircuit {
               else if (key === "roff") model.Roff = value
               else if (key === "von") model.Von = value
               else if (key === "voff") model.Voff = value
+              else if (key === "vt") vt = value
+              else if (key === "vh") vh = value
             }
+          }
+          if (vt !== undefined) {
+            const Vh = vh ?? 0
+            model.Von = vt + Vh / 2
+            model.Voff = vt - Vh / 2
           }
           vswitchModels.set(nameToken.toLowerCase(), model)
         } else if (typeLower === "d") {
