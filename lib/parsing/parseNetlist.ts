@@ -1,20 +1,13 @@
 import { EPS } from "../constants/EPS"
+import type { PulseSpec } from "../types/simulation"
 import { NodeIndex } from "./NodeIndex"
-import { parseNumberWithUnits } from "./units"
-import { parsePulseArgs, parsePwlArgs, pulseValue, pwlValue } from "./waveforms"
+import { parseNumberWithUnits } from "./parseNumberWithUnits"
+import { parsePulseArgs } from "./parsePulseArgs"
+import { parsePwlArgs } from "./parsePwlArgs"
+import { pulseValue } from "./pulseValue"
+import { pwlValue } from "./pwlValue"
 
 type Waveform = ((t: number) => number) | null
-
-type PulseSpec = {
-  v1: number
-  v2: number
-  td: number
-  tr: number
-  tf: number
-  ton: number
-  period: number
-  ncycles: number
-}
 
 type ParsedResistor = { name: string; n1: number; n2: number; R: number }
 type ParsedCapacitor = {
