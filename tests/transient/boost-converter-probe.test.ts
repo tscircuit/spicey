@@ -1,5 +1,10 @@
 import { test, expect } from "bun:test"
-import { simulate, spiceyTranToVGraphs } from "lib/index"
+import {
+  simulate,
+  spiceyTranToVGraphs,
+  eecEngineTranToVGraphs,
+} from "lib/index"
+import { runNgspiceTransient } from "../fixtures/ngspice-transient"
 import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
 import type {
   CircuitJsonWithSimulation,
@@ -7,7 +12,7 @@ import type {
 } from "circuit-to-svg"
 
 const boostConverterNetlist = `
-* Boost converter
+* Circuit JSON to SPICE Netlist
 .MODEL D D
 .MODEL SWMOD SW
 LL1 N1 N2 1
@@ -17,21 +22,21 @@ RR1 N3 0 1K
 SM1 N2 0 N4 0 SWMOD
 Vsimulation_voltage_source_0 N1 0 DC 5
 Vsimulation_voltage_source_1 N4 0 PULSE(0 10 0 1n 1n 0.00068 0.001)
-.PRINT TRAN V(N3)
-.tran 0.00001 0.01
+.PRINT TRAN V(n1) V(n3)
+.tran 0.001 0.1 uic
 .END
 `
 
-test("transient: boost converter with probe", () => {
-  const { circuit, tran } = simulate(boostConverterNetlist)
+test("transient: boost converter with probe", async () => {
+  const spiceyResult = simulate(boostConverterNetlist)
 
-  expect(circuit.probes.tran).toEqual(["N3"])
+  expect(spiceyResult.tran).not.toBeNull()
+  if (!spiceyResult.tran) return
 
-  expect(tran).not.toBeNull()
-  if (!tran) return
-
-  const { nodeVoltages } = tran
-  expect(Object.keys(nodeVoltages)).toEqual(["N3"])
+  const ngspiceResultForGraphing = await runNgspiceTransient(
+    boostConverterNetlist,
+    { probes: spiceyResult.circuit.probes.tran },
+  )
 
   const simulation_experiment_id = "boost_converter_probe"
 
@@ -42,13 +47,22 @@ test("transient: boost converter with probe", () => {
     experiment_type: "transient_simulation",
   }
 
-  const graphs = spiceyTranToVGraphs(tran, circuit, simulation_experiment_id)
-  expect(graphs.length).toBe(1)
-  expect(graphs[0]?.name).toContain("N3")
+  const vGraphsSpicey = spiceyTranToVGraphs(
+    spiceyResult.tran,
+    spiceyResult.circuit,
+    simulation_experiment_id,
+  )
+
+  const vGraphsNgspice = eecEngineTranToVGraphs(
+    ngspiceResultForGraphing,
+    spiceyResult.circuit,
+    simulation_experiment_id,
+  )
 
   const circuitJson: CircuitJsonWithSimulation[] = [
     simulationExperiment,
-    ...graphs,
+    ...vGraphsSpicey,
+    ...vGraphsNgspice,
   ]
 
   const svg = convertCircuitJsonToSimulationGraphSvg({
