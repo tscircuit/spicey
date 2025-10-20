@@ -6,6 +6,59 @@ import { logspace } from "../utils/logspace"
 import { stampAdmittanceComplex } from "../stamping/stampAdmittanceComplex"
 import { stampVoltageSourceComplex } from "../stamping/stampVoltageSourceComplex"
 
+function buildFrequencyArray(params: {
+  mode: "dec" | "lin"
+  N: number
+  f1: number
+  f2: number
+}) {
+  const { mode, N, f1, f2 } = params
+  if (mode === "dec") return logspace(f1, f2, N)
+  const arr: number[] = []
+  const npts = Math.max(2, N)
+  const step = (f2 - f1) / (npts - 1)
+  for (let i = 0; i < npts; i++) arr.push(f1 + i * step)
+  return arr
+}
+
+function buildLinearSystemForAC(
+  ckt: ParsedCircuit,
+  f: number,
+  Nvar: number,
+): { A: Complex[][]; b: Complex[] } {
+  const A = Array.from({ length: Nvar }, () =>
+    Array.from({ length: Nvar }, () => Complex.from(0, 0)),
+  )
+  const b = Array.from({ length: Nvar }, () => Complex.from(0, 0))
+
+  const twoPi = 2 * Math.PI
+
+  for (const r of ckt.R) {
+    if (r.R <= 0) throw new Error(`R ${r.name} must be > 0`)
+    const Y = Complex.from(1 / r.R, 0)
+    stampAdmittanceComplex(A, ckt.nodes, r.n1, r.n2, Y)
+  }
+
+  for (const c of ckt.C) {
+    const Y = Complex.from(0, twoPi * f * c.C)
+    stampAdmittanceComplex(A, ckt.nodes, c.n1, c.n2, Y)
+  }
+
+  for (const l of ckt.L) {
+    const denom = Complex.from(0, twoPi * f * l.L)
+    const Y =
+      denom.abs() < EPS ? Complex.from(0, 0) : Complex.from(1, 0).div(denom)
+    stampAdmittanceComplex(A, ckt.nodes, l.n1, l.n2, Y)
+  }
+
+  for (const vs of ckt.V) {
+    const Vph = Complex.fromPolar(vs.acMag || 0, vs.acPhaseDeg || 0)
+    stampVoltageSourceComplex(A, b, ckt.nodes, vs, Vph)
+  }
+
+  return { A, b }
+}
+
 function simulateAC(ckt: ParsedCircuit) {
   if (!ckt.analyses.ac) return null
 
@@ -14,16 +67,7 @@ function simulateAC(ckt: ParsedCircuit) {
   const nVsrc = ckt.V.length
   const Nvar = nNodeVars + nVsrc
 
-  const freqs =
-    mode === "dec"
-      ? logspace(f1, f2, N)
-      : (() => {
-          const arr: number[] = []
-          const npts = Math.max(2, N)
-          const step = (f2 - f1) / (npts - 1)
-          for (let i = 0; i < npts; i++) arr.push(f1 + i * step)
-          return arr
-        })()
+  const freqs = buildFrequencyArray({ mode, N, f1, f2 })
 
   const nodeVoltages: Record<string, Complex[]> = {}
   ckt.nodes.rev.forEach((name, id) => {
@@ -34,33 +78,7 @@ function simulateAC(ckt: ParsedCircuit) {
   const twoPi = 2 * Math.PI
 
   for (const f of freqs) {
-    const A = Array.from({ length: Nvar }, () =>
-      Array.from({ length: Nvar }, () => Complex.from(0, 0)),
-    )
-    const b = Array.from({ length: Nvar }, () => Complex.from(0, 0))
-
-    for (const r of ckt.R) {
-      if (r.R <= 0) throw new Error(`R ${r.name} must be > 0`)
-      const Y = Complex.from(1 / r.R, 0)
-      stampAdmittanceComplex(A, ckt.nodes, r.n1, r.n2, Y)
-    }
-
-    for (const c of ckt.C) {
-      const Y = Complex.from(0, twoPi * f * c.C)
-      stampAdmittanceComplex(A, ckt.nodes, c.n1, c.n2, Y)
-    }
-
-    for (const l of ckt.L) {
-      const denom = Complex.from(0, twoPi * f * l.L)
-      const Y =
-        denom.abs() < EPS ? Complex.from(0, 0) : Complex.from(1, 0).div(denom)
-      stampAdmittanceComplex(A, ckt.nodes, l.n1, l.n2, Y)
-    }
-
-    for (const vs of ckt.V) {
-      const Vph = Complex.fromPolar(vs.acMag || 0, vs.acPhaseDeg || 0)
-      stampVoltageSourceComplex(A, b, ckt.nodes, vs, Vph)
-    }
+    const { A, b } = buildLinearSystemForAC(ckt, f, Nvar)
 
     const x = solveComplex(A, b)
 
