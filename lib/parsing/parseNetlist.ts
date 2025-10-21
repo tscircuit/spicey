@@ -8,6 +8,10 @@ import { pulseValue } from "./pulseValue"
 import { pwlValue } from "./pwlValue"
 
 type Waveform = ((t: number) => number) | null
+type WaveformInfo =
+  | { type: "pulse"; spec: PulseSpec }
+  | { type: "pwl"; points: Array<{ t: number; v: number }> }
+  | null
 
 type ParsedResistor = { name: string; n1: number; n2: number; R: number }
 type ParsedCapacitor = {
@@ -39,6 +43,7 @@ type ParsedVoltageSource = {
   acMag: number
   acPhaseDeg: number
   waveform: Waveform
+  waveformInfo: WaveformInfo
   index: number
 }
 
@@ -340,6 +345,7 @@ function parseNetlist(text: string): ParsedCircuit {
           acMag: 0,
           acPhaseDeg: 0,
           waveform: null,
+          waveformInfo: null,
           index: -1,
         }
         let i = 3
@@ -371,6 +377,7 @@ function parseNetlist(text: string): ParsedCircuit {
               throw new Error("Malformed PULSE() specification")
             const p = parsePulseArgs(argToken)
             spec.waveform = (t: number) => pulseValue(p, t)
+            spec.waveformInfo = { type: "pulse", spec: p }
             i += key.includes("(") ? 1 : 2
           } else if (key.startsWith("pwl")) {
             const argToken = key.includes("(")
@@ -380,6 +387,7 @@ function parseNetlist(text: string): ParsedCircuit {
               throw new Error("Malformed PWL() specification")
             const pairs = parsePwlArgs(argToken)
             spec.waveform = (t: number) => pwlValue(pairs, t)
+            spec.waveformInfo = { type: "pwl", points: pairs }
             i += key.includes("(") ? 1 : 2
           } else if (/^\(.*\)$/.test(key)) {
             i++
@@ -395,6 +403,7 @@ function parseNetlist(text: string): ParsedCircuit {
           acMag: spec.acMag,
           acPhaseDeg: spec.acPhaseDeg,
           waveform: spec.waveform,
+          waveformInfo: spec.waveformInfo,
           index: spec.index ?? -1,
         })
       } else if (typeChar === "s") {

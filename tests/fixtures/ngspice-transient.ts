@@ -2,6 +2,19 @@ import { Simulation } from "eecircuit-engine"
 import type { ResultType } from "eecircuit-engine"
 import type { EecEngineTranResult } from "lib/index"
 
+// Bun (and some Node environments) may not provide WebAssembly.instantiateStreaming.
+// Polyfill it here so the eecircuit-engine WASM bundle can load correctly.
+if (typeof WebAssembly.instantiateStreaming !== "function") {
+  WebAssembly.instantiateStreaming = async (
+    source: Response | PromiseLike<Response>,
+    importObject?: Record<string, unknown>,
+  ) => {
+    const response = await source
+    const buffer = await response.arrayBuffer()
+    return await WebAssembly.instantiate(buffer, importObject as any)
+  }
+}
+
 /**
  * Run the given netlist with ngspice (via eecircuit-engine) and return
  * an EecEngineTranResult suitable for graphing alongside spicey results.
