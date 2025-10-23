@@ -13,6 +13,68 @@ export async function runNgspiceTransient(
   netlist: string,
   opts?: { probes?: string[] },
 ): Promise<EecEngineTranResult> {
+  if (
+    !(globalThis as { __spiceyDataFetchPatched?: boolean })
+      .__spiceyDataFetchPatched
+  ) {
+    const originalFetch = globalThis.fetch
+    if (originalFetch) {
+      const DATA_WASM_PREFIX = "data:application/wasm;base64,"
+
+      type FetchArgs = Parameters<typeof originalFetch>
+
+      const patchedFetch = async (
+        input: FetchArgs[0],
+        init?: FetchArgs[1],
+      ): Promise<Response> => {
+        const resource =
+          typeof input === "string"
+            ? input
+            : input instanceof Request
+              ? input.url
+              : String(input)
+
+        if (resource.startsWith(DATA_WASM_PREFIX)) {
+          const base64 = resource.slice(DATA_WASM_PREFIX.length)
+          const buffer = Buffer.from(base64, "base64")
+          return new Response(buffer, {
+            status: 200,
+            headers: { "Content-Type": "application/wasm" },
+          })
+        }
+
+        return originalFetch.call(globalThis, input, init as FetchArgs[1])
+      }
+
+      const fetchWithPreconnect = patchedFetch as typeof globalThis.fetch
+      if (typeof originalFetch.preconnect === "function") {
+        fetchWithPreconnect.preconnect =
+          originalFetch.preconnect.bind(originalFetch)
+      }
+
+      globalThis.fetch = fetchWithPreconnect
+    }
+
+    if (typeof WebAssembly.instantiateStreaming !== "function") {
+      type InstantiateImportObject = Parameters<
+        (typeof WebAssembly)["instantiate"]
+      >[1]
+
+      WebAssembly.instantiateStreaming = (async (
+        source: Response | Promise<Response>,
+        importObject?: InstantiateImportObject,
+      ) => {
+        const response = await source
+        const buffer = await response.arrayBuffer()
+        return WebAssembly.instantiate(buffer, importObject)
+      }) as typeof WebAssembly.instantiateStreaming
+    }
+
+    ;(
+      globalThis as { __spiceyDataFetchPatched?: boolean }
+    ).__spiceyDataFetchPatched = true
+  }
+
   const sim = new Simulation()
   await sim.start()
   sim.setNetList(netlist)

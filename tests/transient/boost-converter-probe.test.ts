@@ -10,6 +10,7 @@ import type {
   CircuitJsonWithSimulation,
   SimulationExperimentElement,
 } from "circuit-to-svg"
+import { compareVoltageLevels } from "../fixtures/compare-voltage-levels"
 
 const boostConverterNetlist = `
 * Circuit JSON to SPICE Netlist
@@ -70,5 +71,30 @@ test("transient: boost converter with probe", async () => {
     simulation_experiment_id,
   })
 
+  expect(
+    compareVoltageLevels(vGraphsSpicey, vGraphsNgspice),
+  ).toMatchInlineSnapshot(`
+    {
+      "nodes": {
+        "V(N1)": {
+          "compared_samples": 101,
+          "max_absolute_difference": 0,
+          "mean_absolute_difference": 0,
+          "percentage_difference": 0,
+          "reference_max_magnitude": 5,
+        },
+        "V(N3)": {
+          "compared_samples": 101,
+          "max_absolute_difference": 5.868021,
+          "mean_absolute_difference": 2.406636,
+          "percentage_difference": 44.254385,
+          "reference_max_magnitude": 5.438187,
+        },
+      },
+      "overall_average_percentage_difference": 22.127192,
+      "unmatched_ngspice_nodes": [],
+      "unmatched_spicey_nodes": [],
+    }
+  `)
   expect(svg).toMatchSvgSnapshot(import.meta.path, "boost-converter-probe")
 })
