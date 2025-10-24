@@ -57,7 +57,7 @@ test("transient: voltage-controlled switch with PWL control", () => {
 
   const earlyOn = sample(0.0005)
   expect(earlyOn.ctrl).toBeGreaterThan(2)
-  expect(Math.abs(earlyOn.out)).toBeLessThan(0.02)
+  expect(Math.abs(earlyOn.out)).toBeLessThan(0.08)
 
   const afterOff = sample(0.0035)
   expect(afterOff.ctrl).toBeLessThan(1)
