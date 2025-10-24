@@ -12,10 +12,15 @@ import { stampVoltageSourceReal } from "../stamping/stampVoltageSourceReal"
  * - Otherwise, default to 1000 steps across the stop time.
  */
 function computeEffectiveTimeStep(dtRequested: number, tstop: number) {
-  const dtEff = dtRequested > EPS ? dtRequested : Math.max(tstop / 1000, EPS)
-  const steps = Math.max(1, Math.ceil(tstop / Math.max(dtEff, EPS)))
+  const MIN_STEPS = 500
+  const defaultStep = tstop > 0 ? tstop / MIN_STEPS : 0
+  const printStep = dtRequested > EPS ? dtRequested : defaultStep
+  const internalBase = Math.max(defaultStep, EPS)
+  const dtTarget =
+    dtRequested > EPS ? Math.min(printStep, internalBase) : internalBase
+  const steps = Math.max(1, Math.ceil(tstop / Math.max(dtTarget, EPS)))
   const dt = steps > 0 ? tstop / steps : tstop
-  return { dt, steps }
+  return { dt, steps, printStep }
 }
 
 /**
@@ -37,19 +42,22 @@ function stampAllElementsAtTime(
     stampAdmittanceReal(A, ckt.nodes, r.n1, r.n2, G)
   }
 
-  // Capacitors via Thevenin companion: Gc and Ieq
+  // Capacitors via trapezoidal companion
   for (const c of ckt.C) {
-    const Gc = c.C / Math.max(dt, EPS)
+    const dtEff = Math.max(dt, EPS)
+    const Gc = (2 * c.C) / dtEff
     stampAdmittanceReal(A, ckt.nodes, c.n1, c.n2, Gc)
-    const Ieq = -Gc * c.vPrev
+    const Ieq = -Gc * c.vPrev - c.iPrev
     stampCurrentReal(b, ckt.nodes, c.n1, c.n2, Ieq)
   }
 
-  // Inductors via Norton companion: Gl and current source
+  // Inductors via trapezoidal companion
   for (const l of ckt.L) {
-    const Gl = Math.max(dt, EPS) / l.L
+    const dtEff = Math.max(dt, EPS)
+    const Gl = dtEff / (2 * l.L)
     stampAdmittanceReal(A, ckt.nodes, l.n1, l.n2, Gl)
-    stampCurrentReal(b, ckt.nodes, l.n1, l.n2, l.iPrev)
+    const Ieq = l.iPrev + Gl * l.vPrev
+    stampCurrentReal(b, ckt.nodes, l.n1, l.n2, Ieq)
   }
 
   // Voltage-controlled switches as conductances based on last state
@@ -115,7 +123,7 @@ function updateSwitchStatesFromSolution(ckt: ParsedCircuit, x: number[]) {
     const vctrl = vp - vn
     let nextState = sw.isOn
     if (sw.isOn) {
-      if (vctrl < model.Voff) nextState = false
+      if (vctrl <= model.Voff) nextState = false
     } else if (vctrl > model.Von) {
       nextState = true
     }
@@ -130,7 +138,7 @@ function updateSwitchStatesFromSolution(ckt: ParsedCircuit, x: number[]) {
 function simulateTRAN(ckt: ParsedCircuit) {
   if (!ckt.analyses.tran) return null
   const { dt: dtRequested, tstop } = ckt.analyses.tran
-  const { dt, steps } = computeEffectiveTimeStep(dtRequested, tstop)
+  const { dt, steps, printStep } = computeEffectiveTimeStep(dtRequested, tstop)
 
   const nNodeVars = ckt.nodes.count() - 1
   const nVsrc = ckt.V.length
@@ -143,23 +151,11 @@ function simulateTRAN(ckt: ParsedCircuit) {
   })
   const elementCurrents: Record<string, number[]> = {}
 
-  let t = 0
-  for (let step = 0; step <= steps; step++, t = step * dt) {
-    times.push(t)
-    let x = new Array(Nvar).fill(0)
+  const outputEveryStep = dtRequested <= EPS || printStep <= EPS
+  let nextOutputTime = 0
 
-    for (let iter = 0; iter < 20; iter++) {
-      const A = Array.from({ length: Nvar }, () => new Array(Nvar).fill(0))
-      const b = new Array(Nvar).fill(0)
-
-      stampAllElementsAtTime(A, b, ckt, t, dt, x, iter)
-
-      x = solveReal(A, b)
-
-      const switched = updateSwitchStatesFromSolution(ckt, x)
-      if (!switched) break
-      if (iter === 19) break
-    }
+  const recordSnapshot = (time: number, x: number[]) => {
+    times.push(time)
 
     for (let id = 1; id < ckt.nodes.count(); id++) {
       const idx = id - 1
@@ -179,14 +175,19 @@ function simulateTRAN(ckt: ParsedCircuit) {
     for (const c of ckt.C) {
       const v1 = c.n1 === 0 ? 0 : (x[c.n1 - 1] ?? 0)
       const v2 = c.n2 === 0 ? 0 : (x[c.n2 - 1] ?? 0)
-      const i = (c.C * (v1 - v2 - c.vPrev)) / Math.max(dt, EPS)
+      const dtEff = Math.max(dt, EPS)
+      const Gc = (2 * c.C) / dtEff
+      const Ieq = -Gc * c.vPrev - c.iPrev
+      const i = Gc * (v1 - v2) + Ieq
       ;(elementCurrents[c.name] ||= []).push(i)
     }
     for (const l of ckt.L) {
       const v1 = l.n1 === 0 ? 0 : (x[l.n1 - 1] ?? 0)
       const v2 = l.n2 === 0 ? 0 : (x[l.n2 - 1] ?? 0)
-      const Gl = Math.max(dt, EPS) / l.L
-      const i = Gl * (v1 - v2) + l.iPrev
+      const dtEff = Math.max(dt, EPS)
+      const Gl = dtEff / (2 * l.L)
+      const Ieq = l.iPrev + Gl * l.vPrev
+      const i = Gl * (v1 - v2) + Ieq
       ;(elementCurrents[l.name] ||= []).push(i)
     }
     for (const vs of ckt.V) {
@@ -204,7 +205,6 @@ function simulateTRAN(ckt: ParsedCircuit) {
       ;(elementCurrents[sw.name] ||= []).push(i)
     }
 
-    // Diode current calculation
     for (const d of ckt.D) {
       if (!d.model) continue
       const { nPlus, nMinus, model } = d
@@ -217,17 +217,66 @@ function simulateTRAN(ckt: ParsedCircuit) {
       const id = model.Is * (exp_val - 1)
       ;(elementCurrents[d.name] ||= []).push(id)
     }
+  }
+
+  for (let step = 0; step <= steps; step++) {
+    const t = step * dt
+    let x = new Array(Nvar).fill(0)
+
+    for (let iter = 0; iter < 20; iter++) {
+      const A = Array.from({ length: Nvar }, () => new Array(Nvar).fill(0))
+      const b = new Array(Nvar).fill(0)
+
+      stampAllElementsAtTime(A, b, ckt, t, dt, x, iter)
+
+      x = solveReal(A, b)
+
+      const switched = updateSwitchStatesFromSolution(ckt, x)
+      if (!switched) break
+      if (iter === 19) break
+    }
+
+    if (outputEveryStep) {
+      recordSnapshot(t, x)
+    } else {
+      while (
+        nextOutputTime <= t + EPS &&
+        nextOutputTime <= tstop + EPS &&
+        printStep > EPS
+      ) {
+        recordSnapshot(nextOutputTime, x)
+        nextOutputTime += printStep
+      }
+      const lastRecordedTime = times[times.length - 1]
+      if (
+        step === steps &&
+        (lastRecordedTime == null || Math.abs(lastRecordedTime - t) > EPS)
+      ) {
+        recordSnapshot(t, x)
+      }
+    }
 
     for (const c of ckt.C) {
       const v1 = c.n1 === 0 ? 0 : (x[c.n1 - 1] ?? 0)
       const v2 = c.n2 === 0 ? 0 : (x[c.n2 - 1] ?? 0)
-      c.vPrev = v1 - v2
+      const dtEff = Math.max(dt, EPS)
+      const vNew = v1 - v2
+      const iPrevOld = c.iPrev
+      const Gc = (2 * c.C) / dtEff
+      const iNew = Gc * (vNew - c.vPrev) - iPrevOld
+      c.vPrev = vNew
+      c.iPrev = iNew
     }
     for (const l of ckt.L) {
       const v1 = l.n1 === 0 ? 0 : (x[l.n1 - 1] ?? 0)
       const v2 = l.n2 === 0 ? 0 : (x[l.n2 - 1] ?? 0)
-      const Gl = Math.max(dt, EPS) / l.L
-      l.iPrev = Gl * (v1 - v2) + l.iPrev
+      const dtEff = Math.max(dt, EPS)
+      const vNew = v1 - v2
+      const Gl = dtEff / (2 * l.L)
+      const iPrevOld = l.iPrev
+      const iNew = iPrevOld + Gl * (vNew + l.vPrev)
+      l.vPrev = vNew
+      l.iPrev = iNew
     }
 
     for (const d of ckt.D) {
