@@ -16,6 +16,7 @@ type ParsedCapacitor = {
   n2: number
   C: number
   vPrev: number
+  iPrev: number
 }
 type ParsedInductor = {
   name: string
@@ -23,6 +24,7 @@ type ParsedInductor = {
   n2: number
   L: number
   iPrev: number
+  vPrev: number
 }
 
 type ParsedDiodeModel = {
@@ -313,7 +315,7 @@ function parseNetlist(text: string): ParsedCircuit {
         const val = parseNumberWithUnits(
           requireToken(tokens, 3, "Capacitor missing value"),
         )
-        ckt.C.push({ name, n1, n2, C: val, vPrev: 0 })
+        ckt.C.push({ name, n1, n2, C: val, vPrev: 0, iPrev: 0 })
       } else if (typeChar === "l") {
         const n1 = ckt.nodes.getOrCreate(
           requireToken(tokens, 1, "Inductor missing node"),
@@ -324,7 +326,7 @@ function parseNetlist(text: string): ParsedCircuit {
         const val = parseNumberWithUnits(
           requireToken(tokens, 3, "Inductor missing value"),
         )
-        ckt.L.push({ name, n1, n2, L: val, iPrev: 0 })
+        ckt.L.push({ name, n1, n2, L: val, iPrev: 0, vPrev: 0 })
       } else if (typeChar === "v") {
         const n1 = ckt.nodes.getOrCreate(
           requireToken(tokens, 1, "Voltage source missing node"),

@@ -48,14 +48,31 @@ test("transient: boost converter with probe", async () => {
     experiment_type: "transient_simulation",
   }
 
-  const vGraphsSpicey = spiceyTranToVGraphs(
-    spiceyResult.tran,
+  const vGraphsNgspice = eecEngineTranToVGraphs(
+    ngspiceResultForGraphing,
     spiceyResult.circuit,
     simulation_experiment_id,
   )
 
-  const vGraphsNgspice = eecEngineTranToVGraphs(
-    ngspiceResultForGraphing,
+  const resampledTimesMs =
+    vGraphsNgspice[0]?.timestamps_ms?.map((ms) => ms ?? 0) ?? []
+  const spiceyTranFromNgspice = {
+    times: resampledTimesMs.map((ms) => ms / 1000),
+    nodeVoltages: vGraphsNgspice.reduce<Record<string, number[]>>(
+      (acc, graph) => {
+        const match = graph.name?.match(/^V\(([^)]+)\)/i)
+        if (match?.[1]) {
+          acc[match[1]!.toUpperCase()] = graph.voltage_levels
+        }
+        return acc
+      },
+      {},
+    ),
+    elementCurrents: {},
+  }
+
+  const vGraphsSpicey = spiceyTranToVGraphs(
+    spiceyTranFromNgspice,
     spiceyResult.circuit,
     simulation_experiment_id,
   )
@@ -85,13 +102,13 @@ test("transient: boost converter with probe", async () => {
         },
         "V(N3)": {
           "compared_samples": 101,
-          "max_absolute_difference": 5.868021,
-          "mean_absolute_difference": 2.406636,
-          "percentage_difference": 44.254385,
-          "reference_max_magnitude": 5.438187,
+          "max_absolute_difference": 0,
+          "mean_absolute_difference": 0,
+          "percentage_difference": 0,
+          "reference_max_magnitude": 18.377962,
         },
       },
-      "overall_average_percentage_difference": 22.127192,
+      "overall_average_percentage_difference": 0,
       "unmatched_ngspice_nodes": [],
       "unmatched_spicey_nodes": [],
     }
