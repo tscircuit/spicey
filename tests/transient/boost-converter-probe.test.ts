@@ -76,14 +76,14 @@ test("transient: boost converter with probe", async () => {
   ).toMatchInlineSnapshot(`
     {
       "nodes": {
-        "V(N1)": {
+        "N1": {
           "compared_samples": 101,
           "max_absolute_difference": 0,
           "mean_absolute_difference": 0,
           "percentage_difference": 0,
           "reference_max_magnitude": 5,
         },
-        "V(N3)": {
+        "N3": {
           "compared_samples": 101,
           "max_absolute_difference": 5.868021,
           "mean_absolute_difference": 2.406636,
