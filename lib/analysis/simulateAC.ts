@@ -4,16 +4,18 @@ import { solveComplex } from "../math/solveComplex"
 import type { ParsedCircuit } from "../parsing/parseNetlist"
 import { logspace } from "../utils/logspace"
 import { stampAdmittanceComplex } from "../stamping/stampAdmittanceComplex"
+import { stampCurrentComplex } from "../stamping/stampCurrentComplex"
 import { stampVoltageSourceComplex } from "../stamping/stampVoltageSourceComplex"
 
 function buildFrequencyArray(params: {
-  mode: "dec" | "lin"
+  mode: "dec" | "lin" | "oct"
   N: number
   f1: number
   f2: number
 }) {
   const { mode, N, f1, f2 } = params
   if (mode === "dec") return logspace(f1, f2, N)
+  if (mode === "oct") return logspace(f1, f2, N, 2)
   const arr: number[] = []
   const npts = Math.max(2, N)
   const step = (f2 - f1) / (npts - 1)
@@ -49,6 +51,20 @@ function buildLinearSystemForAC(
     const Y =
       denom.abs() < EPS ? Complex.from(0, 0) : Complex.from(1, 0).div(denom)
     stampAdmittanceComplex(A, ckt.nodes, l.n1, l.n2, Y)
+  }
+
+  for (const currentSource of ckt.I) {
+    const currentPhasor = Complex.fromPolar(
+      currentSource.acMag,
+      currentSource.acPhaseDeg,
+    )
+    stampCurrentComplex(
+      b,
+      ckt.nodes,
+      currentSource.n1,
+      currentSource.n2,
+      currentPhasor,
+    )
   }
 
   for (const vs of ckt.V) {
@@ -123,6 +139,11 @@ function simulateAC(ckt: ParsedCircuit) {
     for (const vs of ckt.V) {
       const i = x[vs.index] ?? Complex.from(0, 0)
       ;(elementCurrents[vs.name] ||= []).push(i)
+    }
+    for (const currentSource of ckt.I) {
+      ;(elementCurrents[currentSource.name] ||= []).push(
+        Complex.fromPolar(currentSource.acMag, currentSource.acPhaseDeg),
+      )
     }
   }
 

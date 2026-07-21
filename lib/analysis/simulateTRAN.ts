@@ -63,6 +63,13 @@ function stampAllElementsAtTime(
   }
 
   // Independent voltage sources (DC or waveform)
+  for (const currentSource of ckt.I) {
+    const current = currentSource.waveform
+      ? currentSource.waveform(t)
+      : currentSource.dc
+    stampCurrentReal(b, ckt.nodes, currentSource.n1, currentSource.n2, current)
+  }
+
   for (const vs of ckt.V) {
     const Vt = vs.waveform ? vs.waveform(t) : vs.dc || 0
     stampVoltageSourceReal(A, b, ckt.nodes, vs, Vt)
@@ -192,6 +199,12 @@ function simulateTRAN(ckt: ParsedCircuit) {
     for (const vs of ckt.V) {
       const i = x[vs.index] ?? 0
       ;(elementCurrents[vs.name] ||= []).push(i)
+    }
+    for (const currentSource of ckt.I) {
+      const current = currentSource.waveform
+        ? currentSource.waveform(t)
+        : currentSource.dc
+      ;(elementCurrents[currentSource.name] ||= []).push(current)
     }
     for (const sw of ckt.S) {
       const model = sw.model

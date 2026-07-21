@@ -36,6 +36,32 @@ formatAcResult(result1.ac)
 `)
 ```
 
+## Supported analyses
+
+`simulate` supports transient (`.tran`), DC operating point (`.op`), DC source
+sweep (`.dc`), and AC sweep (`.ac lin`, `.ac dec`, and `.ac oct`) analyses.
+Independent voltage and current sources support DC, AC magnitude/phase, PULSE,
+and PWL specifications.
+
+Use `simulateToCircuitJson` when the result should use tscircuit's
+analysis-specific Circuit JSON elements:
+
+```ts
+import { simulateToCircuitJson } from "spicey"
+
+const simulationResultCircuitJson = simulateToCircuitJson({
+  spiceString: `
+V1 in 0 DC 0
+R1 in out 1k
+R2 out 0 1k
+.PRINT DC V(out) I(V1)
+.dc V1 0 5 1
+.end
+`,
+  simulationExperimentId: "simulation_experiment_0",
+})
+```
+
 ## Proposed directory structure
 
 To make it easy to extend the simulator (for example to add transistor models later), the library is now organized into focused modules:

@@ -42,6 +42,16 @@ type ParsedVoltageSource = {
   index: number
 }
 
+type ParsedCurrentSource = {
+  name: string
+  n1: number
+  n2: number
+  dc: number
+  acMag: number
+  acPhaseDeg: number
+  waveform: Waveform
+}
+
 type ParsedVSwitchModel = {
   name: string
   Ron: number
@@ -71,10 +81,17 @@ type ParsedSwitch = {
 }
 
 type ParsedACAnalysis = {
-  mode: "dec" | "lin"
+  mode: "dec" | "lin" | "oct"
   N: number
   f1: number
   f2: number
+} | null
+
+type ParsedDcSweepAnalysis = {
+  sourceName: string
+  start: number
+  stop: number
+  step: number
 } | null
 
 type ParsedTranAnalysis = {
@@ -88,14 +105,23 @@ type ParsedCircuit = {
   C: ParsedCapacitor[]
   L: ParsedInductor[]
   V: ParsedVoltageSource[]
+  I: ParsedCurrentSource[]
   S: ParsedSwitch[]
   D: ParsedDiode[]
   analyses: {
     ac: ParsedACAnalysis
     tran: ParsedTranAnalysis
+    op: boolean
+    dc: ParsedDcSweepAnalysis
   }
   probes: {
     tran: string[]
+  }
+  probeVectors: {
+    tran: string[]
+    op: string[]
+    dc: string[]
+    ac: string[]
   }
   skipped: string[]
   models: {
@@ -120,6 +146,72 @@ function requireToken(tokens: string[], index: number, context: string) {
   return token
 }
 
+function parseIndependentSourceSpec(tokens: string[]) {
+  const sourceSpec = {
+    dc: 0,
+    acMag: 0,
+    acPhaseDeg: 0,
+    waveform: null as Waveform,
+  }
+  let tokenIndex = 3
+
+  if (tokenIndex < tokens.length && !/^[a-zA-Z]/.test(tokens[tokenIndex]!)) {
+    sourceSpec.dc = parseNumberWithUnits(tokens[tokenIndex]!)
+    tokenIndex++
+  }
+
+  while (tokenIndex < tokens.length) {
+    const key = tokens[tokenIndex]!.toLowerCase()
+    if (key === "dc") {
+      const valueToken = requireToken(
+        tokens,
+        tokenIndex + 1,
+        "DC value missing",
+      )
+      sourceSpec.dc = parseNumberWithUnits(valueToken)
+      tokenIndex += 2
+    } else if (key === "ac") {
+      const magnitudeToken = requireToken(
+        tokens,
+        tokenIndex + 1,
+        "AC magnitude missing",
+      )
+      sourceSpec.acMag = parseNumberWithUnits(magnitudeToken)
+      const phaseToken = tokens[tokenIndex + 2]
+      if (phaseToken != null && /^[+-]?\d/.test(phaseToken)) {
+        sourceSpec.acPhaseDeg = parseNumberWithUnits(phaseToken)
+        tokenIndex += 3
+      } else {
+        tokenIndex += 2
+      }
+    } else if (key.startsWith("pulse")) {
+      const argumentToken = key.includes("(")
+        ? key
+        : requireToken(tokens, tokenIndex + 1, "PULSE() missing arguments")
+      if (!/\(.*\)/.test(argumentToken)) {
+        throw new Error("Malformed PULSE() specification")
+      }
+      const pulseSpec = parsePulseArgs(argumentToken)
+      sourceSpec.waveform = (time: number) => pulseValue(pulseSpec, time)
+      tokenIndex += key.includes("(") ? 1 : 2
+    } else if (key.startsWith("pwl")) {
+      const argumentToken = key.includes("(")
+        ? key
+        : requireToken(tokens, tokenIndex + 1, "PWL() missing arguments")
+      if (!/\(.*\)/.test(argumentToken)) {
+        throw new Error("Malformed PWL() specification")
+      }
+      const pairs = parsePwlArgs(argumentToken)
+      sourceSpec.waveform = (time: number) => pwlValue(pairs, time)
+      tokenIndex += key.includes("(") ? 1 : 2
+    } else {
+      tokenIndex++
+    }
+  }
+
+  return sourceSpec
+}
+
 function parseNetlist(text: string): ParsedCircuit {
   const vswitchModels = new Map<string, ParsedVSwitchModel>()
   const diodeModels = new Map<string, ParsedDiodeModel>()
@@ -130,10 +222,12 @@ function parseNetlist(text: string): ParsedCircuit {
     C: [],
     L: [],
     V: [],
+    I: [],
     S: [],
     D: [],
-    analyses: { ac: null, tran: null },
+    analyses: { ac: null, tran: null, op: false, dc: null },
     probes: { tran: [] },
+    probeVectors: { tran: [], op: [], dc: [], ac: [] },
     skipped: [],
     models: { vswitch: vswitchModels, diode: diodeModels },
   }
@@ -164,8 +258,8 @@ function parseNetlist(text: string): ParsedCircuit {
       const dir = first.toLowerCase()
       if (dir === ".ac") {
         const mode = requireToken(tokens, 1, ".ac missing mode").toLowerCase()
-        if (mode !== "dec" && mode !== "lin")
-          throw new Error(".ac supports 'dec' or 'lin'")
+        if (mode !== "dec" && mode !== "lin" && mode !== "oct")
+          throw new Error(".ac supports 'dec', 'lin', or 'oct'")
         const N = parseInt(
           requireToken(tokens, 2, ".ac missing point count"),
           10,
@@ -177,6 +271,21 @@ function parseNetlist(text: string): ParsedCircuit {
           requireToken(tokens, 4, ".ac missing stop frequency"),
         )
         ckt.analyses.ac = { mode, N, f1, f2 }
+      } else if (dir === ".op") {
+        ckt.analyses.op = true
+      } else if (dir === ".dc") {
+        ckt.analyses.dc = {
+          sourceName: requireToken(tokens, 1, ".dc missing source"),
+          start: parseNumberWithUnits(
+            requireToken(tokens, 2, ".dc missing start value"),
+          ),
+          stop: parseNumberWithUnits(
+            requireToken(tokens, 3, ".dc missing stop value"),
+          ),
+          step: parseNumberWithUnits(
+            requireToken(tokens, 4, ".dc missing step value"),
+          ),
+        }
       } else if (dir === ".tran") {
         const dt = parseNumberWithUnits(
           requireToken(tokens, 1, ".tran missing timestep"),
@@ -191,18 +300,33 @@ function parseNetlist(text: string): ParsedCircuit {
           1,
           ".print missing analysis type",
         ).toLowerCase()
-        if (analysisType === "tran") {
-          const probeTokens = tokens.slice(2)
-          for (const token of probeTokens) {
-            const match = token.match(/^v\(([^)]+)\)$/i)
-            if (match && match[1]) {
-              const nodeName = match[1]
-              if (
-                !ckt.probes.tran.some(
-                  (p) => p.toUpperCase() === nodeName.toUpperCase(),
-                )
-              ) {
-                ckt.probes.tran.push(nodeName)
+        if (
+          analysisType === "tran" ||
+          analysisType === "op" ||
+          analysisType === "dc" ||
+          analysisType === "ac"
+        ) {
+          const probeTokens = tokens
+            .slice(2)
+            .filter((token) => /^[vi]\s*\([^)]+\)$/i.test(token))
+          ckt.probeVectors[analysisType].push(...probeTokens)
+
+          if (analysisType === "tran") {
+            for (const token of probeTokens) {
+              const match = token.match(/^v\(([^)]+)\)$/i)
+              if (match && match[1]) {
+                for (const nodeName of match[1]
+                  .split(",")
+                  .map((name) => name.trim())) {
+                  if (
+                    !ckt.probes.tran.some(
+                      (probeName) =>
+                        probeName.toUpperCase() === nodeName.toUpperCase(),
+                    )
+                  ) {
+                    ckt.probes.tran.push(nodeName)
+                  }
+                }
               }
             }
           }
@@ -332,61 +456,7 @@ function parseNetlist(text: string): ParsedCircuit {
         const n2 = ckt.nodes.getOrCreate(
           requireToken(tokens, 2, "Voltage source missing node"),
         )
-        const spec: Omit<
-          ParsedVoltageSource,
-          "name" | "n1" | "n2" | "index"
-        > & { index?: number } = {
-          dc: 0,
-          acMag: 0,
-          acPhaseDeg: 0,
-          waveform: null,
-          index: -1,
-        }
-        let i = 3
-        if (i < tokens.length && !/^[a-zA-Z]/.test(tokens[i]!)) {
-          spec.dc = parseNumberWithUnits(tokens[i]!)
-          i++
-        }
-        while (i < tokens.length) {
-          const key = tokens[i]!.toLowerCase()
-          if (key === "dc") {
-            const valueToken = requireToken(tokens, i + 1, "DC value missing")
-            spec.dc = parseNumberWithUnits(valueToken)
-            i += 2
-          } else if (key === "ac") {
-            const magToken = requireToken(tokens, i + 1, "AC magnitude missing")
-            spec.acMag = parseNumberWithUnits(magToken)
-            const phaseToken = tokens[i + 2]
-            if (phaseToken != null && /^[+-]?\d/.test(phaseToken)) {
-              spec.acPhaseDeg = parseNumberWithUnits(phaseToken)
-              i += 3
-            } else {
-              i += 2
-            }
-          } else if (key.startsWith("pulse")) {
-            const argToken = key.includes("(")
-              ? key
-              : requireToken(tokens, i + 1, "PULSE() missing arguments")
-            if (!argToken || !/\(.*\)/.test(argToken))
-              throw new Error("Malformed PULSE() specification")
-            const p = parsePulseArgs(argToken)
-            spec.waveform = (t: number) => pulseValue(p, t)
-            i += key.includes("(") ? 1 : 2
-          } else if (key.startsWith("pwl")) {
-            const argToken = key.includes("(")
-              ? key
-              : requireToken(tokens, i + 1, "PWL() missing arguments")
-            if (!argToken || !/\(.*\)/.test(argToken))
-              throw new Error("Malformed PWL() specification")
-            const pairs = parsePwlArgs(argToken)
-            spec.waveform = (t: number) => pwlValue(pairs, t)
-            i += key.includes("(") ? 1 : 2
-          } else if (/^\(.*\)$/.test(key)) {
-            i++
-          } else {
-            i++
-          }
-        }
+        const spec = parseIndependentSourceSpec(tokens)
         ckt.V.push({
           name,
           n1,
@@ -395,7 +465,24 @@ function parseNetlist(text: string): ParsedCircuit {
           acMag: spec.acMag,
           acPhaseDeg: spec.acPhaseDeg,
           waveform: spec.waveform,
-          index: spec.index ?? -1,
+          index: -1,
+        })
+      } else if (typeChar === "i") {
+        const n1 = ckt.nodes.getOrCreate(
+          requireToken(tokens, 1, "Current source missing node"),
+        )
+        const n2 = ckt.nodes.getOrCreate(
+          requireToken(tokens, 2, "Current source missing node"),
+        )
+        const spec = parseIndependentSourceSpec(tokens)
+        ckt.I.push({
+          name,
+          n1,
+          n2,
+          dc: spec.dc,
+          acMag: spec.acMag,
+          acPhaseDeg: spec.acPhaseDeg,
+          waveform: spec.waveform,
         })
       } else if (typeChar === "s") {
         const n1 = ckt.nodes.getOrCreate(
@@ -490,6 +577,8 @@ export type {
   ParsedDiode,
   ParsedDiodeModel,
   ParsedVoltageSource,
+  ParsedCurrentSource,
+  ParsedDcSweepAnalysis,
   ParsedVSwitchModel,
   ParsedSwitch,
   CircuitNodeIndex,
