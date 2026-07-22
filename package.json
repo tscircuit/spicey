@@ -19,7 +19,7 @@
     "@biomejs/biome": "^2.2.4",
     "@types/bun": "latest",
     "bun-match-svg": "^0.0.14",
-    "circuit-json": "github:tscircuit/circuit-json#72b4fd2b88decced344cdf8c28d6d36a73696b1b",
+    "circuit-json": "github:tscircuit/circuit-json#6804b9a31f4944cec30250004f7dda8539e720ed",
     "circuit-to-svg": "^0.0.217",
     "eecircuit-engine": "^1.5.5",
     "format-si-unit": "^0.0.7",
