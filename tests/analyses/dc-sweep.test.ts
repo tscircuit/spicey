@@ -47,6 +47,7 @@ R2 out 0 1k
       dc_sweep_unit: "V",
     },
   })
+  expect(svg).toContain(">DC Sweep (V)</text>")
   expect(svg).toMatchSvgSnapshot(
     import.meta.path,
     "spicey-voltage-source-dc-sweep",
@@ -97,6 +98,7 @@ R1 out 0 1k
       dc_sweep_unit: "A",
     },
   })
+  expect(svg).toContain(">DC Sweep (A)</text>")
   expect(svg).toMatchSvgSnapshot(
     import.meta.path,
     "spicey-current-source-dc-sweep",
