@@ -7,10 +7,7 @@
     "dist"
   ],
   "scripts": {
-    "prepare": "bun ./scripts/prepare-git-dependency.ts",
-    "build": "tsup-node --config ./tsup.config.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
+    "build": "tsup-node ./lib/index.ts --format esm --dts",
     "format": "biome format --write .",
     "format:check": "biome format ."
   },
@@ -19,22 +16,13 @@
     "@biomejs/biome": "^2.2.4",
     "@types/bun": "latest",
     "bun-match-svg": "^0.0.14",
-    "circuit-json": "github:tscircuit/circuit-json#6804b9a31f4944cec30250004f7dda8539e720ed",
-    "circuit-to-svg": "github:tscircuit/circuit-to-svg#3ac42774aabf1da74d7dc93c2cf12b632294451d",
+    "circuit-json": "github:tscircuit/circuit-json#3d2b4b96bd8aa8a310ce52631bae7cc16b37a096",
+    "circuit-to-svg": "github:tscircuit/circuit-to-svg#d16ffdf7339e25c5332a33b9986f8775d6b048e5",
     "eecircuit-engine": "^1.5.5",
-    "format-si-unit": "^0.0.7",
-    "ts-expect": "^1.3.0",
-    "tsup": "^8.5.0",
-    "zod": "3"
+    "tsup": "^8.5.0"
   },
   "peerDependencies": {
-    "circuit-json": "*",
     "typescript": "^5"
   },
-  "trustedDependencies": [
-    "circuit-json",
-    "circuit-to-svg",
-    "esbuild",
-    "sharp"
-  ]
+  "trustedDependencies": ["sharp"]
 }
