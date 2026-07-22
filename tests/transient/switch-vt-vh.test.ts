@@ -1,10 +1,8 @@
 import { test, expect } from "bun:test"
 import { simulate, spiceyTranToVGraphs } from "lib/index"
 import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
-import type {
-  CircuitJsonWithSimulation,
-  SimulationExperimentElement,
-} from "circuit-to-svg"
+import type { CircuitJsonWithSimulation } from "circuit-to-svg"
+import type { SimulationExperiment } from "circuit-json"
 
 const netlist = `
 * Switch test with Vt and Vh model parameters
@@ -78,11 +76,11 @@ test("transient: switch with Vt and Vh snapshot", () => {
 
   const simulation_experiment_id = "switch_vt_vh_test"
 
-  const simulationExperiment: SimulationExperimentElement = {
+  const simulationExperiment: SimulationExperiment = {
     type: "simulation_experiment",
     simulation_experiment_id,
     name: "Switch with Vt and Vh",
-    experiment_type: "transient_simulation",
+    experiment_type: "spice_transient_analysis",
   }
 
   const graphs = spiceyTranToVGraphs(tran, circuit, simulation_experiment_id)

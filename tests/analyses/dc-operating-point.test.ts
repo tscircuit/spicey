@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { simulate, simulateToCircuitJson } from "lib/index"
+import { renderAnalysisGraphSvg } from "../fixtures/render-analysis-graph-svg"
 
 const operatingPointNetlist = `
 V1 in 0 DC 5
@@ -18,12 +19,12 @@ test("simulates and formats a DC operating point", () => {
   expect(simulation.op?.nodeVoltages.out).toBeCloseTo(2.5)
   expect(simulation.op?.elementCurrents.V1).toBeCloseTo(-0.0025)
 
-  expect(
-    simulateToCircuitJson({
-      spiceString: operatingPointNetlist,
-      simulationExperimentId: "simulation_experiment_0",
-    }),
-  ).toEqual([
+  const circuitJson = simulateToCircuitJson({
+    spiceString: operatingPointNetlist,
+    simulationExperimentId: "simulation_experiment_0",
+  })
+
+  expect(circuitJson).toEqual([
     {
       type: "simulation_dc_operating_point_voltage",
       simulation_dc_operating_point_voltage_id:
@@ -43,4 +44,18 @@ test("simulates and formats a DC operating point", () => {
       name: "IV1",
     },
   ])
+
+  const svg = renderAnalysisGraphSvg({
+    simulationResultCircuitJson: circuitJson,
+    simulationExperiment: {
+      type: "simulation_experiment",
+      simulation_experiment_id: "simulation_experiment_0",
+      name: "Spicey DC Operating Point",
+      experiment_type: "spice_dc_operating_point",
+    },
+  })
+  expect(svg).toMatchSvgSnapshot(
+    import.meta.path,
+    "spicey-dc-operating-point-voltage-and-current",
+  )
 })

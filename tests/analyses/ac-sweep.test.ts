@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { simulate, simulateToCircuitJson } from "lib/index"
+import { renderAnalysisGraphSvg } from "../fixtures/render-analysis-graph-svg"
 
 test("simulates an octave AC sweep with complex voltage and current", () => {
   const spiceString = `
@@ -35,4 +36,32 @@ C1 out 0 1u
     expect(voltageGraph.complex_voltages[0]?.re).toBeCloseTo(Math.sqrt(3))
     expect(voltageGraph.complex_voltages[0]?.im).toBeCloseTo(1)
   }
+
+  const simulationExperiment = {
+    type: "simulation_experiment" as const,
+    simulation_experiment_id: "simulation_experiment_0",
+    name: "Spicey AC Sweep",
+    experiment_type: "spice_ac_analysis" as const,
+    ac_sweep_type: "octave" as const,
+    ac_samples_per_interval: 1,
+    ac_start_frequency_hz: 10,
+    ac_stop_frequency_hz: 80,
+  }
+  const magnitudeSvg = renderAnalysisGraphSvg({
+    simulationResultCircuitJson: circuitJson,
+    simulationExperiment,
+  })
+  const phaseSvg = renderAnalysisGraphSvg({
+    simulationResultCircuitJson: circuitJson,
+    simulationExperiment,
+    acSweepView: "phase",
+  })
+  expect(magnitudeSvg).toMatchSvgSnapshot(
+    import.meta.path,
+    "spicey-ac-sweep-voltage-and-current-magnitude",
+  )
+  expect(phaseSvg).toMatchSvgSnapshot(
+    import.meta.path,
+    "spicey-ac-sweep-voltage-and-current-phase",
+  )
 })

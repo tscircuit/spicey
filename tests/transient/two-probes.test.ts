@@ -1,10 +1,8 @@
 import { test, expect } from "bun:test"
 import { simulate, formatTranResult, spiceyTranToVGraphs } from "lib/index"
 import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
-import type {
-  CircuitJsonWithSimulation,
-  SimulationExperimentElement,
-} from "circuit-to-svg"
+import type { CircuitJsonWithSimulation } from "circuit-to-svg"
+import type { SimulationExperiment } from "circuit-json"
 
 const twoProbesNetlist = `
 * RC circuit with a pulse source and two probes
@@ -41,11 +39,11 @@ test("transient: two probes", () => {
 
   const simulation_experiment_id = "two_probes_rc_pulse"
 
-  const simulationExperiment: SimulationExperimentElement = {
+  const simulationExperiment: SimulationExperiment = {
     type: "simulation_experiment",
     simulation_experiment_id,
     name: "RC Pulse with Two Probes",
-    experiment_type: "transient_simulation",
+    experiment_type: "spice_transient_analysis",
   }
 
   const graphs = spiceyTranToVGraphs(tran, circuit, simulation_experiment_id)
