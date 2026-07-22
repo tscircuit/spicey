@@ -20,7 +20,7 @@
     "@types/bun": "latest",
     "bun-match-svg": "^0.0.14",
     "circuit-json": "github:tscircuit/circuit-json#6804b9a31f4944cec30250004f7dda8539e720ed",
-    "circuit-to-svg": "github:tscircuit/circuit-to-svg#bdc76a0f2aab2802ed91793ea302a42acd2154df",
+    "circuit-to-svg": "github:tscircuit/circuit-to-svg#3ac42774aabf1da74d7dc93c2cf12b632294451d",
     "eecircuit-engine": "^1.5.5",
     "format-si-unit": "^0.0.7",
     "ts-expect": "^1.3.0",
