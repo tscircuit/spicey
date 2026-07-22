@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync, symlinkSync } from "node:fs"
+import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -8,9 +8,27 @@ const circuitJsonPackagePath = Bun.resolveSync(
   "circuit-json/package.json",
   packageDirectory,
 )
+const circuitJsonPackageDirectory = path.dirname(circuitJsonPackagePath)
 const dependenciesDirectory = path.dirname(path.dirname(circuitJsonPackagePath))
 
 try {
+  if (
+    !existsSync(path.join(circuitJsonPackageDirectory, "dist", "index.d.mts"))
+  ) {
+    const circuitJsonBuildResult = Bun.spawnSync({
+      cmd: ["bun", "run", "prepare"],
+      cwd: circuitJsonPackageDirectory,
+      env: process.env,
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    if (circuitJsonBuildResult.exitCode !== 0) {
+      throw new Error(
+        `Unable to prepare circuit-json package (exit ${circuitJsonBuildResult.exitCode})`,
+      )
+    }
+  }
+
   cpSync(
     path.join(packageDirectory, "lib"),
     path.join(stagingDirectory, "lib"),
