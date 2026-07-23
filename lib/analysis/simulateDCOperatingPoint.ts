@@ -167,11 +167,20 @@ export const calculateDcOperatingPoint = (
     })
     solution = solveReal(matrix, rightHandSide)
     const switchStateChanged = updateSwitchStates({ circuit, solution })
-    const largestChange = solution.reduce(
-      (maximum, value, index) =>
-        Math.max(maximum, Math.abs(value - (previousSolution[index] ?? 0))),
-      0,
-    )
+    let largestChange = 0
+    for (
+      let solutionVariableIndex = 0;
+      solutionVariableIndex < solution.length;
+      solutionVariableIndex++
+    ) {
+      const solutionVariable = solution[solutionVariableIndex] ?? 0
+      const previousSolutionVariable =
+        previousSolution[solutionVariableIndex] ?? 0
+      largestChange = Math.max(
+        largestChange,
+        Math.abs(solutionVariable - previousSolutionVariable),
+      )
+    }
     if (!switchStateChanged && largestChange < 1e-9) break
   }
 
@@ -217,11 +226,11 @@ export const calculateDcOperatingPoint = (
   }
   for (const diode of circuit.D) {
     if (!diode.model) continue
-    const voltage =
+    const diodeVoltage =
       getNodeVoltage({ nodeId: diode.nPlus, solution }) -
       getNodeVoltage({ nodeId: diode.nMinus, solution })
     elementCurrents[diode.name] =
-      diode.model.Is * (Math.exp(voltage / (diode.model.N * VT_300K)) - 1)
+      diode.model.Is * (Math.exp(diodeVoltage / (diode.model.N * VT_300K)) - 1)
   }
 
   return { nodeVoltages, elementCurrents }

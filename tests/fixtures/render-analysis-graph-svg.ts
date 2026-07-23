@@ -1,4 +1,7 @@
-import type { AnyCircuitElement, SimulationExperiment } from "circuit-json"
+import type {
+  SimulationAnalysisResult,
+  SimulationExperiment,
+} from "circuit-json"
 import {
   type AcSweepView,
   convertCircuitJsonToSimulationGraphSvg,
@@ -9,7 +12,7 @@ export const renderAnalysisGraphSvg = ({
   simulationExperiment,
   acSweepView = "magnitude",
 }: {
-  simulationResultCircuitJson: AnyCircuitElement[]
+  simulationResultCircuitJson: SimulationAnalysisResult[]
   simulationExperiment: SimulationExperiment
   acSweepView?: AcSweepView
 }) =>

@@ -1,7 +1,22 @@
 import type { ParsedCircuit } from "../parsing/parseNetlist"
 import { calculateDcOperatingPoint } from "./simulateDCOperatingPoint"
 
-const getSweepValues = ({
+const isDcSweepCoordinateInRange = ({
+  dcSweepCoordinate,
+  stop,
+  step,
+}: {
+  dcSweepCoordinate: number
+  stop: number
+  step: number
+}) => {
+  const tolerance = Math.abs(step) * 1e-9
+  return step > 0
+    ? dcSweepCoordinate <= stop + tolerance
+    : dcSweepCoordinate >= stop - tolerance
+}
+
+const getDcSweepCoordinates = ({
   start,
   stop,
   step,
@@ -15,47 +30,49 @@ const getSweepValues = ({
     throw new Error(".dc step must move from start toward stop")
   }
 
-  const values: number[] = []
-  const tolerance = Math.abs(step) * 1e-9
-  const isInRange = (value: number) =>
-    step > 0 ? value <= stop + tolerance : value >= stop - tolerance
+  const dcSweepCoordinates: number[] = []
 
   for (
-    let value = start;
-    isInRange(value);
-    value = start + values.length * step
+    let dcSweepCoordinate = start;
+    isDcSweepCoordinateInRange({ dcSweepCoordinate, stop, step });
+    dcSweepCoordinate = start + dcSweepCoordinates.length * step
   ) {
-    values.push(value)
-    if (values.length > 1_000_000) {
+    dcSweepCoordinates.push(dcSweepCoordinate)
+    if (dcSweepCoordinates.length > 1_000_000) {
       throw new Error(".dc sweep exceeds 1,000,000 points")
     }
   }
-  return values
+  return dcSweepCoordinates
 }
 
 export const simulateDCSweep = (circuit: ParsedCircuit) => {
-  const analysis = circuit.analyses.dc
-  if (!analysis) return null
+  const dcSweepAnalysis = circuit.analyses.dc
+  if (!dcSweepAnalysis) return null
 
   const voltageSource = circuit.V.find(
-    (source) => source.name.toLowerCase() === analysis.sourceName.toLowerCase(),
+    (simulationVoltageSource) =>
+      simulationVoltageSource.name.toLowerCase() ===
+      dcSweepAnalysis.sourceName.toLowerCase(),
   )
   const currentSource = circuit.I.find(
-    (source) => source.name.toLowerCase() === analysis.sourceName.toLowerCase(),
+    (simulationCurrentSource) =>
+      simulationCurrentSource.name.toLowerCase() ===
+      dcSweepAnalysis.sourceName.toLowerCase(),
   )
-  const source = voltageSource ?? currentSource
-  if (!source) {
-    throw new Error(`.dc source ${analysis.sourceName} was not found`)
+  const dcSweepSource = voltageSource ?? currentSource
+  if (!dcSweepSource) {
+    throw new Error(`.dc source ${dcSweepAnalysis.sourceName} was not found`)
   }
 
-  const originalDcValue = source.dc
-  const sweepValues = getSweepValues(analysis)
+  const originalDcSourceLevel = dcSweepSource.dc
+  const dcSweepCoordinates = getDcSweepCoordinates(dcSweepAnalysis)
+  const sweepUnit: "V" | "A" = voltageSource ? "V" : "A"
   const nodeVoltages: Record<string, number[]> = {}
   const elementCurrents: Record<string, number[]> = {}
 
   try {
-    for (const sweepValue of sweepValues) {
-      source.dc = sweepValue
+    for (const dcSweepCoordinate of dcSweepCoordinates) {
+      dcSweepSource.dc = dcSweepCoordinate
       const operatingPoint = calculateDcOperatingPoint(circuit)
       for (const [nodeName, voltage] of Object.entries(
         operatingPoint.nodeVoltages,
@@ -69,12 +86,12 @@ export const simulateDCSweep = (circuit: ParsedCircuit) => {
       }
     }
   } finally {
-    source.dc = originalDcValue
+    dcSweepSource.dc = originalDcSourceLevel
   }
 
   return {
-    sweepValues,
-    sweepUnit: voltageSource ? ("V" as const) : ("A" as const),
+    sweepValues: dcSweepCoordinates,
+    sweepUnit,
     nodeVoltages,
     elementCurrents,
   }

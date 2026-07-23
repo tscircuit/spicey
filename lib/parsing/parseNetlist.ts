@@ -52,6 +52,13 @@ type ParsedCurrentSource = {
   waveform: Waveform
 }
 
+type ParsedIndependentSourceSpec = {
+  dc: number
+  acMag: number
+  acPhaseDeg: number
+  waveform: Waveform
+}
+
 type ParsedVSwitchModel = {
   name: string
   Ron: number
@@ -94,6 +101,11 @@ type ParsedDcSweepAnalysis = {
   step: number
 } | null
 
+type ParsedVSwitchModelName = string
+type ParsedDiodeModelName = string
+type ParsedVSwitchModelByName = Map<ParsedVSwitchModelName, ParsedVSwitchModel>
+type ParsedDiodeModelByName = Map<ParsedDiodeModelName, ParsedDiodeModel>
+
 type ParsedTranAnalysis = {
   dt: number
   tstop: number
@@ -125,8 +137,8 @@ type ParsedCircuit = {
   }
   skipped: string[]
   models: {
-    vswitch: Map<string, ParsedVSwitchModel>
-    diode: Map<string, ParsedDiodeModel>
+    vswitch: ParsedVSwitchModelByName
+    diode: ParsedDiodeModelByName
   }
 }
 
@@ -147,11 +159,11 @@ function requireToken(tokens: string[], index: number, context: string) {
 }
 
 function parseIndependentSourceSpec(tokens: string[]) {
-  const sourceSpec = {
+  const sourceSpec: ParsedIndependentSourceSpec = {
     dc: 0,
     acMag: 0,
     acPhaseDeg: 0,
-    waveform: null as Waveform,
+    waveform: null,
   }
   let tokenIndex = 3
 
@@ -163,12 +175,12 @@ function parseIndependentSourceSpec(tokens: string[]) {
   while (tokenIndex < tokens.length) {
     const key = tokens[tokenIndex]!.toLowerCase()
     if (key === "dc") {
-      const valueToken = requireToken(
+      const dcLevelToken = requireToken(
         tokens,
         tokenIndex + 1,
         "DC value missing",
       )
-      sourceSpec.dc = parseNumberWithUnits(valueToken)
+      sourceSpec.dc = parseNumberWithUnits(dcLevelToken)
       tokenIndex += 2
     } else if (key === "ac") {
       const magnitudeToken = requireToken(
@@ -201,8 +213,8 @@ function parseIndependentSourceSpec(tokens: string[]) {
       if (!/\(.*\)/.test(argumentToken)) {
         throw new Error("Malformed PWL() specification")
       }
-      const pairs = parsePwlArgs(argumentToken)
-      sourceSpec.waveform = (time: number) => pwlValue(pairs, time)
+      const timeVoltagePairs = parsePwlArgs(argumentToken)
+      sourceSpec.waveform = (time: number) => pwlValue(timeVoltagePairs, time)
       tokenIndex += key.includes("(") ? 1 : 2
     } else {
       tokenIndex++
@@ -213,8 +225,8 @@ function parseIndependentSourceSpec(tokens: string[]) {
 }
 
 function parseNetlist(text: string): ParsedCircuit {
-  const vswitchModels = new Map<string, ParsedVSwitchModel>()
-  const diodeModels = new Map<string, ParsedDiodeModel>()
+  const vswitchModels: ParsedVSwitchModelByName = new Map()
+  const diodeModels: ParsedDiodeModelByName = new Map()
 
   const ckt: ParsedCircuit = {
     nodes: new NodeIndex(),
@@ -456,15 +468,15 @@ function parseNetlist(text: string): ParsedCircuit {
         const n2 = ckt.nodes.getOrCreate(
           requireToken(tokens, 2, "Voltage source missing node"),
         )
-        const spec = parseIndependentSourceSpec(tokens)
+        const independentSourceSpec = parseIndependentSourceSpec(tokens)
         ckt.V.push({
           name,
           n1,
           n2,
-          dc: spec.dc,
-          acMag: spec.acMag,
-          acPhaseDeg: spec.acPhaseDeg,
-          waveform: spec.waveform,
+          dc: independentSourceSpec.dc,
+          acMag: independentSourceSpec.acMag,
+          acPhaseDeg: independentSourceSpec.acPhaseDeg,
+          waveform: independentSourceSpec.waveform,
           index: -1,
         })
       } else if (typeChar === "i") {
@@ -474,15 +486,15 @@ function parseNetlist(text: string): ParsedCircuit {
         const n2 = ckt.nodes.getOrCreate(
           requireToken(tokens, 2, "Current source missing node"),
         )
-        const spec = parseIndependentSourceSpec(tokens)
+        const independentSourceSpec = parseIndependentSourceSpec(tokens)
         ckt.I.push({
           name,
           n1,
           n2,
-          dc: spec.dc,
-          acMag: spec.acMag,
-          acPhaseDeg: spec.acPhaseDeg,
-          waveform: spec.waveform,
+          dc: independentSourceSpec.dc,
+          acMag: independentSourceSpec.acMag,
+          acPhaseDeg: independentSourceSpec.acPhaseDeg,
+          waveform: independentSourceSpec.waveform,
         })
       } else if (typeChar === "s") {
         const n1 = ckt.nodes.getOrCreate(
