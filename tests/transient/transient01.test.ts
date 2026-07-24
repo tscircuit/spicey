@@ -6,10 +6,8 @@ import {
 } from "lib/index"
 import { runNgspiceTransient } from "../fixtures/ngspice-transient"
 import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
-import type {
-  CircuitJsonWithSimulation,
-  SimulationExperimentElement,
-} from "circuit-to-svg"
+import type { CircuitJsonWithSimulation } from "circuit-to-svg"
+import type { SimulationExperiment } from "circuit-json"
 
 const rcPulseNetlist = `
 * RC circuit with a pulse source
@@ -41,11 +39,11 @@ test("transient01: rc-pulse", async () => {
     simulation_experiment_id,
   )
 
-  const simulationExperiment: SimulationExperimentElement = {
+  const simulationExperiment: SimulationExperiment = {
     type: "simulation_experiment",
     simulation_experiment_id,
     name: "RC Circuit Pulse Response",
-    experiment_type: "transient_simulation",
+    experiment_type: "spice_transient_analysis",
   }
 
   const circuitJson: CircuitJsonWithSimulation[] = [

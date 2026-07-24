@@ -6,10 +6,8 @@ import {
 } from "lib/index"
 import { runNgspiceTransient } from "../fixtures/ngspice-transient"
 import { convertCircuitJsonToSimulationGraphSvg } from "circuit-to-svg"
-import type {
-  CircuitJsonWithSimulation,
-  SimulationExperimentElement,
-} from "circuit-to-svg"
+import type { CircuitJsonWithSimulation } from "circuit-to-svg"
+import type { SimulationExperiment } from "circuit-json"
 import { compareVoltageLevels } from "../fixtures/compare-voltage-levels"
 
 const boostConverterNetlist = `
@@ -41,11 +39,11 @@ test("transient: boost converter with probe", async () => {
 
   const simulation_experiment_id = "boost_converter_probe"
 
-  const simulationExperiment: SimulationExperimentElement = {
+  const simulationExperiment: SimulationExperiment = {
     type: "simulation_experiment",
     simulation_experiment_id,
     name: "Boost Converter with Probe",
-    experiment_type: "transient_simulation",
+    experiment_type: "spice_transient_analysis",
   }
 
   const vGraphsSpicey = spiceyTranToVGraphs(

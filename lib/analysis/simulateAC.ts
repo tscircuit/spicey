@@ -4,129 +4,228 @@ import { solveComplex } from "../math/solveComplex"
 import type { ParsedCircuit } from "../parsing/parseNetlist"
 import { logspace } from "../utils/logspace"
 import { stampAdmittanceComplex } from "../stamping/stampAdmittanceComplex"
+import { stampCurrentComplex } from "../stamping/stampCurrentComplex"
 import { stampVoltageSourceComplex } from "../stamping/stampVoltageSourceComplex"
 
-function buildFrequencyArray(params: {
-  mode: "dec" | "lin"
-  N: number
-  f1: number
-  f2: number
+function getAcFrequenciesHz({
+  mode,
+  pointsPerInterval,
+  startFrequencyHz,
+  stopFrequencyHz,
+}: {
+  mode: "dec" | "lin" | "oct"
+  pointsPerInterval: number
+  startFrequencyHz: number
+  stopFrequencyHz: number
 }) {
-  const { mode, N, f1, f2 } = params
-  if (mode === "dec") return logspace(f1, f2, N)
-  const arr: number[] = []
-  const npts = Math.max(2, N)
-  const step = (f2 - f1) / (npts - 1)
-  for (let i = 0; i < npts; i++) arr.push(f1 + i * step)
-  return arr
+  if (mode === "dec") {
+    return logspace({
+      startFrequencyHz,
+      stopFrequencyHz,
+      pointsPerInterval,
+    })
+  }
+  if (mode === "oct") {
+    return logspace({
+      startFrequencyHz,
+      stopFrequencyHz,
+      pointsPerInterval,
+      intervalBase: 2,
+    })
+  }
+  const pointCount = Math.max(2, pointsPerInterval)
+  const frequencyStepHz =
+    (stopFrequencyHz - startFrequencyHz) / (pointCount - 1)
+  return Array.from(
+    { length: pointCount },
+    (_, pointIndex) => startFrequencyHz + pointIndex * frequencyStepHz,
+  )
 }
 
-function buildLinearSystemForAC(
-  ckt: ParsedCircuit,
-  f: number,
-  Nvar: number,
-): { A: Complex[][]; b: Complex[] } {
-  const A = Array.from({ length: Nvar }, () =>
-    Array.from({ length: Nvar }, () => Complex.from(0, 0)),
+function buildLinearSystemForAc({
+  circuit,
+  frequencyHz,
+  variableCount,
+}: {
+  circuit: ParsedCircuit
+  frequencyHz: number
+  variableCount: number
+}): { matrix: Complex[][]; rightHandSide: Complex[] } {
+  const matrix = Array.from({ length: variableCount }, () =>
+    Array.from({ length: variableCount }, () => Complex.from(0, 0)),
   )
-  const b = Array.from({ length: Nvar }, () => Complex.from(0, 0))
+  const rightHandSide = Array.from({ length: variableCount }, () =>
+    Complex.from(0, 0),
+  )
 
   const twoPi = 2 * Math.PI
 
-  for (const r of ckt.R) {
-    if (r.R <= 0) throw new Error(`R ${r.name} must be > 0`)
-    const Y = Complex.from(1 / r.R, 0)
-    stampAdmittanceComplex(A, ckt.nodes, r.n1, r.n2, Y)
+  for (const resistor of circuit.R) {
+    if (resistor.R <= 0) {
+      throw new Error(`R ${resistor.name} must be > 0`)
+    }
+    const admittance = Complex.from(1 / resistor.R, 0)
+    stampAdmittanceComplex(
+      matrix,
+      circuit.nodes,
+      resistor.n1,
+      resistor.n2,
+      admittance,
+    )
   }
 
-  for (const c of ckt.C) {
-    const Y = Complex.from(0, twoPi * f * c.C)
-    stampAdmittanceComplex(A, ckt.nodes, c.n1, c.n2, Y)
+  for (const capacitor of circuit.C) {
+    const admittance = Complex.from(0, twoPi * frequencyHz * capacitor.C)
+    stampAdmittanceComplex(
+      matrix,
+      circuit.nodes,
+      capacitor.n1,
+      capacitor.n2,
+      admittance,
+    )
   }
 
-  for (const l of ckt.L) {
-    const denom = Complex.from(0, twoPi * f * l.L)
-    const Y =
-      denom.abs() < EPS ? Complex.from(0, 0) : Complex.from(1, 0).div(denom)
-    stampAdmittanceComplex(A, ckt.nodes, l.n1, l.n2, Y)
+  for (const inductor of circuit.L) {
+    const impedance = Complex.from(0, twoPi * frequencyHz * inductor.L)
+    const admittance =
+      impedance.abs() < EPS
+        ? Complex.from(0, 0)
+        : Complex.from(1, 0).div(impedance)
+    stampAdmittanceComplex(
+      matrix,
+      circuit.nodes,
+      inductor.n1,
+      inductor.n2,
+      admittance,
+    )
   }
 
-  for (const vs of ckt.V) {
-    const Vph = Complex.fromPolar(vs.acMag || 0, vs.acPhaseDeg || 0)
-    stampVoltageSourceComplex(A, b, ckt.nodes, vs, Vph)
+  for (const currentSource of circuit.I) {
+    const currentPhasor = Complex.fromPolar(
+      currentSource.acMag,
+      currentSource.acPhaseDeg,
+    )
+    stampCurrentComplex(
+      rightHandSide,
+      circuit.nodes,
+      currentSource.n1,
+      currentSource.n2,
+      currentPhasor,
+    )
   }
 
-  return { A, b }
+  for (const voltageSource of circuit.V) {
+    const voltagePhasor = Complex.fromPolar(
+      voltageSource.acMag || 0,
+      voltageSource.acPhaseDeg || 0,
+    )
+    stampVoltageSourceComplex(
+      matrix,
+      rightHandSide,
+      circuit.nodes,
+      voltageSource,
+      voltagePhasor,
+    )
+  }
+
+  return { matrix, rightHandSide }
 }
 
-function simulateAC(ckt: ParsedCircuit) {
-  if (!ckt.analyses.ac) return null
+function simulateAC(circuit: ParsedCircuit) {
+  if (!circuit.analyses.ac) return null
 
-  const { mode, N, f1, f2 } = ckt.analyses.ac
-  const nNodeVars = ckt.nodes.count() - 1
-  const nVsrc = ckt.V.length
-  const Nvar = nNodeVars + nVsrc
+  const { mode, N, f1, f2 } = circuit.analyses.ac
+  const nodeVariableCount = circuit.nodes.count() - 1
+  const variableCount = nodeVariableCount + circuit.V.length
 
-  const freqs = buildFrequencyArray({ mode, N, f1, f2 })
+  const frequenciesHz = getAcFrequenciesHz({
+    mode,
+    pointsPerInterval: N,
+    startFrequencyHz: f1,
+    stopFrequencyHz: f2,
+  })
 
   const nodeVoltages: Record<string, Complex[]> = {}
-  ckt.nodes.rev.forEach((name, id) => {
-    if (id !== 0) nodeVoltages[name] = []
+  circuit.nodes.rev.forEach((nodeName, nodeId) => {
+    if (nodeId !== 0) nodeVoltages[nodeName] = []
   })
   const elementCurrents: Record<string, Complex[]> = {}
 
   const twoPi = 2 * Math.PI
 
-  for (const f of freqs) {
-    const { A, b } = buildLinearSystemForAC(ckt, f, Nvar)
+  for (const frequencyHz of frequenciesHz) {
+    const { matrix, rightHandSide } = buildLinearSystemForAc({
+      circuit,
+      frequencyHz,
+      variableCount,
+    })
 
-    const x = solveComplex(A, b)
+    const solution = solveComplex(matrix, rightHandSide)
 
-    for (let id = 1; id < ckt.nodes.count(); id++) {
-      const idx = id - 1
-      const nodeName = ckt.nodes.rev[id]
+    for (let nodeId = 1; nodeId < circuit.nodes.count(); nodeId++) {
+      const nodeVariableIndex = nodeId - 1
+      const nodeName = circuit.nodes.rev[nodeId]
       if (!nodeName) continue
       const series = nodeVoltages[nodeName]
       if (!series) continue
-      series.push(x[idx] ?? Complex.from(0, 0))
+      series.push(solution[nodeVariableIndex] ?? Complex.from(0, 0))
     }
 
-    for (const r of ckt.R) {
+    for (const resistor of circuit.R) {
       const v1 =
-        r.n1 === 0 ? Complex.from(0, 0) : (x[r.n1 - 1] ?? Complex.from(0, 0))
+        resistor.n1 === 0
+          ? Complex.from(0, 0)
+          : (solution[resistor.n1 - 1] ?? Complex.from(0, 0))
       const v2 =
-        r.n2 === 0 ? Complex.from(0, 0) : (x[r.n2 - 1] ?? Complex.from(0, 0))
-      const Y = Complex.from(1 / r.R, 0)
-      const i = Y.mul(v1.sub(v2))
-      ;(elementCurrents[r.name] ||= []).push(i)
+        resistor.n2 === 0
+          ? Complex.from(0, 0)
+          : (solution[resistor.n2 - 1] ?? Complex.from(0, 0))
+      const admittance = Complex.from(1 / resistor.R, 0)
+      const current = admittance.mul(v1.sub(v2))
+      ;(elementCurrents[resistor.name] ||= []).push(current)
     }
-    for (const c of ckt.C) {
+    for (const capacitor of circuit.C) {
       const v1 =
-        c.n1 === 0 ? Complex.from(0, 0) : (x[c.n1 - 1] ?? Complex.from(0, 0))
+        capacitor.n1 === 0
+          ? Complex.from(0, 0)
+          : (solution[capacitor.n1 - 1] ?? Complex.from(0, 0))
       const v2 =
-        c.n2 === 0 ? Complex.from(0, 0) : (x[c.n2 - 1] ?? Complex.from(0, 0))
-      const Y = Complex.from(0, twoPi * f * c.C)
-      const i = Y.mul(v1.sub(v2))
-      ;(elementCurrents[c.name] ||= []).push(i)
+        capacitor.n2 === 0
+          ? Complex.from(0, 0)
+          : (solution[capacitor.n2 - 1] ?? Complex.from(0, 0))
+      const admittance = Complex.from(0, twoPi * frequencyHz * capacitor.C)
+      const current = admittance.mul(v1.sub(v2))
+      ;(elementCurrents[capacitor.name] ||= []).push(current)
     }
-    for (const l of ckt.L) {
+    for (const inductor of circuit.L) {
       const v1 =
-        l.n1 === 0 ? Complex.from(0, 0) : (x[l.n1 - 1] ?? Complex.from(0, 0))
+        inductor.n1 === 0
+          ? Complex.from(0, 0)
+          : (solution[inductor.n1 - 1] ?? Complex.from(0, 0))
       const v2 =
-        l.n2 === 0 ? Complex.from(0, 0) : (x[l.n2 - 1] ?? Complex.from(0, 0))
-      const denom = Complex.from(0, twoPi * f * l.L)
-      const Y =
-        denom.abs() < EPS ? Complex.from(0, 0) : Complex.from(1, 0).div(denom)
-      const i = Y.mul(v1.sub(v2))
-      ;(elementCurrents[l.name] ||= []).push(i)
+        inductor.n2 === 0
+          ? Complex.from(0, 0)
+          : (solution[inductor.n2 - 1] ?? Complex.from(0, 0))
+      const impedance = Complex.from(0, twoPi * frequencyHz * inductor.L)
+      const admittance =
+        impedance.abs() < EPS
+          ? Complex.from(0, 0)
+          : Complex.from(1, 0).div(impedance)
+      const current = admittance.mul(v1.sub(v2))
+      ;(elementCurrents[inductor.name] ||= []).push(current)
     }
-    for (const vs of ckt.V) {
-      const i = x[vs.index] ?? Complex.from(0, 0)
-      ;(elementCurrents[vs.name] ||= []).push(i)
+    for (const voltageSource of circuit.V) {
+      const current = solution[voltageSource.index] ?? Complex.from(0, 0)
+      ;(elementCurrents[voltageSource.name] ||= []).push(current)
+    }
+    for (const currentSource of circuit.I) {
+      ;(elementCurrents[currentSource.name] ||= []).push(
+        Complex.fromPolar(currentSource.acMag, currentSource.acPhaseDeg),
+      )
     }
   }
 
-  return { freqs, nodeVoltages, elementCurrents }
+  return { freqs: frequenciesHz, nodeVoltages, elementCurrents }
 }
 
 export { simulateAC }
