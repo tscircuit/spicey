@@ -16,6 +16,7 @@ type ParsedCapacitor = {
   n2: number
   C: number
   vPrev: number
+  iPrev?: number
 }
 type ParsedInductor = {
   name: string
@@ -23,6 +24,7 @@ type ParsedInductor = {
   n2: number
   L: number
   iPrev: number
+  vPrev?: number
 }
 
 type ParsedDiodeModel = {
@@ -39,6 +41,7 @@ type ParsedVoltageSource = {
   acMag: number
   acPhaseDeg: number
   waveform: Waveform
+  pulse?: PulseSpec | null
   index: number
 }
 
@@ -340,6 +343,7 @@ function parseNetlist(text: string): ParsedCircuit {
           acMag: 0,
           acPhaseDeg: 0,
           waveform: null,
+          pulse: null,
           index: -1,
         }
         let i = 3
@@ -370,6 +374,7 @@ function parseNetlist(text: string): ParsedCircuit {
             if (!argToken || !/\(.*\)/.test(argToken))
               throw new Error("Malformed PULSE() specification")
             const p = parsePulseArgs(argToken)
+            spec.pulse = p
             spec.waveform = (t: number) => pulseValue(p, t)
             i += key.includes("(") ? 1 : 2
           } else if (key.startsWith("pwl")) {
@@ -395,6 +400,7 @@ function parseNetlist(text: string): ParsedCircuit {
           acMag: spec.acMag,
           acPhaseDeg: spec.acPhaseDeg,
           waveform: spec.waveform,
+          pulse: spec.pulse,
           index: spec.index ?? -1,
         })
       } else if (typeChar === "s") {

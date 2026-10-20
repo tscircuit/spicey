@@ -77,21 +77,21 @@ test("transient: boost converter with probe", async () => {
     {
       "nodes": {
         "N1": {
-          "compared_samples": 101,
+          "compared_samples": 906,
           "max_absolute_difference": 0,
           "mean_absolute_difference": 0,
           "percentage_difference": 0,
           "reference_max_magnitude": 5,
         },
         "N3": {
-          "compared_samples": 101,
-          "max_absolute_difference": 5.868021,
-          "mean_absolute_difference": 2.406636,
-          "percentage_difference": 44.254385,
-          "reference_max_magnitude": 5.438187,
+          "compared_samples": 906,
+          "max_absolute_difference": 0.020193,
+          "mean_absolute_difference": 0.012526,
+          "percentage_difference": 0.068158,
+          "reference_max_magnitude": 18.377962,
         },
       },
-      "overall_average_percentage_difference": 22.127192,
+      "overall_average_percentage_difference": 0.034079,
       "unmatched_ngspice_nodes": [],
       "unmatched_spicey_nodes": [],
     }
