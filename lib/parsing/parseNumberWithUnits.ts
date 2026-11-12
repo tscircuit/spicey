@@ -20,6 +20,8 @@ function parseNumberWithUnits(raw: unknown) {
   if (numberPart == null) return parseFloat(s)
   let val = parseFloat(numberPart)
   let suf = (suffixPart ?? "").toLowerCase()
+  // A bare f/F is the SPICE femto scale factor, not a farad unit.
+  if (suf === "f") return val * unitMul.f
   suf = suf.replace(/(ohm|v|a|s|h|f)$/g, "")
   if (suf === "meg") return val * unitMul.meg
   if (suf.length === 1 && suf in unitMul) {
