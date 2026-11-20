@@ -1,5 +1,6 @@
 import { EPS } from "../constants/EPS"
 import type { PulseSpec } from "../types/simulation"
+import { expandSubcircuits } from "./expandSubcircuits"
 import { NodeIndex } from "./NodeIndex"
 import { parseNumberWithUnits } from "./parseNumberWithUnits"
 import { parsePulseArgs } from "./parsePulseArgs"
@@ -138,7 +139,8 @@ function parseNetlist(text: string): ParsedCircuit {
     models: { vswitch: vswitchModels, diode: diodeModels },
   }
 
-  const lines = text.split(/\r?\n/)
+  const normalizedText = expandSubcircuits(text)
+  const lines = normalizedText.split(/\r?\n/)
   let seenTitle = false
 
   for (const raw of lines) {

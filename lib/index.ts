@@ -1,3 +1,4 @@
+export { expandSubcircuits } from "./parsing/expandSubcircuits"
 export { parseNetlist } from "./parsing/parseNetlist"
 export { simulate } from "./analysis/simulate"
 export { simulateAC } from "./analysis/simulateAC"
