@@ -20,6 +20,8 @@ function parseNumberWithUnits(raw: unknown) {
   if (numberPart == null) return parseFloat(s)
   let val = parseFloat(numberPart)
   let suf = (suffixPart ?? "").toLowerCase()
+  if (Object.hasOwn(unitMul, suf))
+    return val * unitMul[suf as keyof typeof unitMul]
   suf = suf.replace(/(ohm|v|a|s|h|f)$/g, "")
   if (suf === "meg") return val * unitMul.meg
   if (suf.length === 1 && suf in unitMul) {
